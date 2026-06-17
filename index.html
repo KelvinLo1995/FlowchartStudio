@@ -102,7 +102,7 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="h-screen w-screen flex flex-col overflow-hidden text-slate-800">
+<body class="h-screen w-screen flex flex-col overflow-hidden text-slate-800 relative">
 
     <!-- Top Toolbar -->
     <header class="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-2 sm:px-4 z-40 shrink-0">
@@ -112,14 +112,17 @@
         </div>
         
         <!-- Scrollable actions area for smaller screens -->
-        <div class="flex items-center space-x-2 text-sm overflow-x-auto no-scrollbar w-full justify-start md:justify-end py-1">
+        <div class="flex items-center space-x-2 text-sm overflow-x-auto no-scrollbar w-full justify-start md:justify-end py-1 ml-2">
             <button onclick="toggleMobileSidebar()" class="md:hidden shrink-0 px-3 py-1.5 bg-slate-800 text-white rounded font-medium shadow-sm">Shapes</button>
+
+            <!-- New Button -->
+            <button onclick="openClearModal()" class="shrink-0 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded transition font-medium border border-red-200">New</button>
 
             <!-- Zoom Controls -->
             <div class="flex items-center shrink-0 bg-slate-50 border border-slate-300 rounded overflow-hidden">
-                <button onclick="setZoom(scale - 0.1)" class="px-2 py-1.5 hover:bg-slate-200 transition">-</button>
+                <button onclick="zoomBtn(-0.1)" class="px-2 py-1.5 hover:bg-slate-200 transition">-</button>
                 <span id="zoom-text" class="px-1 w-12 text-center text-xs font-medium">100%</span>
-                <button onclick="setZoom(scale + 0.1)" class="px-2 py-1.5 hover:bg-slate-200 transition">+</button>
+                <button onclick="zoomBtn(0.1)" class="px-2 py-1.5 hover:bg-slate-200 transition">+</button>
             </div>
 
             <!-- Snap Toggle -->
@@ -170,8 +173,9 @@
             <div class="p-4 text-xs text-slate-400 border-t border-slate-100">
                 <span class="md:hidden text-blue-500 font-medium block mb-2"><b>Tap</b> any shape to add to canvas.</span>
                 <span class="hidden md:inline"><b>Drag & Drop</b> to add<br></span>
-                <b>Double Click</b> shapes/lines to edit text<br>
-                <b>Ctrl+C / Ctrl+V</b> to copy and paste<br>
+                <b>Double Click</b> to edit text<br>
+                <b>Ctrl + Click</b> to multi-select<br>
+                <b>Ctrl+A / C / V</b> to select/copy/paste<br>
                 <b>Tap Port then Shape</b> to easily connect<br>
             </div>
         </aside>
@@ -203,6 +207,18 @@
                 <div id="html-layer" class="absolute inset-0 pointer-events-none z-10"></div>
             </div>
         </main>
+    </div>
+
+    <!-- Custom Modal for "New" Clear Canvas action -->
+    <div id="clear-modal" class="hidden fixed inset-0 bg-slate-900/40 z-[100] flex items-center justify-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200">
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Clear Canvas?</h3>
+            <p class="text-slate-600 mb-6 text-sm">Are you sure you want to clear the entire flowchart? This action cannot be undone.</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeClearModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-medium transition">Cancel</button>
+                <button onclick="confirmClearCanvas()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium transition">Clear Canvas</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -272,8 +288,8 @@
             connections: [], // { id, fromId, fromPort, toId, toPort, text }
             nextShapeId: 1,
             nextConnId: 1,
-            selectedShape: null,
-            selectedConnection: null
+            selectedShapes: [], // Array for multi-select support
+            selectedConnections: [] // Array for multi-select support
         };
 
         /* --- UI & INTERACTION STATE --- */
@@ -289,19 +305,43 @@
         let connectStartPos = {x: 0, y: 0};
         let mouseCanvasPos = { x: 0, y: 0 };
         let snapSize = 20;
-        let copiedShape = null;
+        let copiedShapes = [];
         let scale = 1;
+        
+        // Touch zooming origin tracking
         let initialPinchDist = null;
+        let pinchOriginX = 0;
+        let pinchOriginY = 0;
 
         function snap(val) {
             if (snapSize <= 1) return Math.round(val);
             return Math.round(val / snapSize) * snapSize;
         }
 
-        function setZoom(newScale) {
+        // Refactored SetZoom to anchor the zoom coordinate exactly where the user pinched/scrolled
+        function setZoom(newScale, originX = null, originY = null) {
+            const wrapper = document.getElementById('canvas-wrapper');
+            const rect = wrapper.getBoundingClientRect();
+            
+            // If no origin passed, zoom to the center of the screen
+            if (originX === null) originX = rect.width / 2;
+            if (originY === null) originY = rect.height / 2;
+            
+            // Current center point in native canvas coordinates (pre-scale)
+            const canvasX = (originX + wrapper.scrollLeft) / scale;
+            const canvasY = (originY + wrapper.scrollTop) / scale;
+            
             scale = Math.min(Math.max(newScale, 0.2), 3);
             document.getElementById('canvas').style.transform = `scale(${scale})`;
             document.getElementById('zoom-text').innerText = Math.round(scale * 100) + '%';
+            
+            // Adjust scroll wrapper to keep the targeted coordinate physically under the cursor/pinch center
+            wrapper.scrollLeft = (canvasX * scale) - originX;
+            wrapper.scrollTop = (canvasY * scale) - originY;
+        }
+        
+        function zoomBtn(delta) {
+            setZoom(scale + delta);
         }
 
         const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -338,11 +378,14 @@
             canvasWrapper.addEventListener('dragover', e => e.preventDefault());
             canvasWrapper.addEventListener('drop', handleDrop);
 
-            // Wheel zoom
+            // Wheel zoom anchored to cursor
             canvasWrapper.addEventListener('wheel', e => {
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
-                    setZoom(scale - e.deltaY * 0.002);
+                    const rect = canvasWrapper.getBoundingClientRect();
+                    const originX = e.clientX - rect.left;
+                    const originY = e.clientY - rect.top;
+                    setZoom(scale - e.deltaY * 0.002, originX, originY);
                 }
             }, {passive: false});
 
@@ -352,58 +395,71 @@
                     return;
                 }
 
-                // Delete
+                // Delete selected
                 if (e.key === 'Delete' || e.key === 'Backspace') {
                     deleteSelected();
                     return;
                 }
 
-                // Copy (Ctrl+C / Cmd+C)
+                // Select All (Ctrl+A)
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                    e.preventDefault();
+                    state.selectedShapes = state.shapes.map(s => s.id);
+                    state.selectedConnections = state.connections.map(c => c.id);
+                    renderAll();
+                }
+
+                // Multi-Copy (Ctrl+C)
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-                    if (state.selectedShape) {
-                        const shapeToCopy = state.shapes.find(s => s.id === state.selectedShape);
-                        if (shapeToCopy) {
-                            copiedShape = JSON.parse(JSON.stringify(shapeToCopy));
-                        }
+                    if (state.selectedShapes.length > 0) {
+                        copiedShapes = state.shapes.filter(s => state.selectedShapes.includes(s.id)).map(s => JSON.parse(JSON.stringify(s)));
                     }
                 }
 
-                // Paste (Ctrl+V / Cmd+V)
+                // Multi-Paste (Ctrl+V)
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                    if (copiedShape) {
+                    if (copiedShapes && copiedShapes.length > 0) {
                         const offset = snapSize > 1 ? snapSize * 2 : 20;
-                        copiedShape.x += offset;
-                        copiedShape.y += offset;
-
-                        const newShape = JSON.parse(JSON.stringify(copiedShape));
-                        newShape.id = state.nextShapeId++;
-                        newShape.x = snap(newShape.x);
-                        newShape.y = snap(newShape.y);
+                        let newSelectedIds = [];
                         
-                        state.shapes.push(newShape);
-                        selectShape(newShape.id);
+                        copiedShapes.forEach(cs => {
+                            cs.x += offset;
+                            cs.y += offset;
+                            const newShape = JSON.parse(JSON.stringify(cs));
+                            newShape.id = state.nextShapeId++;
+                            newShape.x = snap(newShape.x);
+                            newShape.y = snap(newShape.y);
+                            state.shapes.push(newShape);
+                            newSelectedIds.push(newShape.id);
+                        });
+                        
+                        state.selectedShapes = newSelectedIds;
+                        state.selectedConnections = [];
                         saveToLocal();
+                        renderAll();
                     }
                 }
 
-                // Arrow key movement for selected shape
-                if (state.selectedShape) {
-                    const shape = state.shapes.find(s => s.id === state.selectedShape);
-                    if (!shape) return;
-                    
+                // Arrow key movement for MULTI-SELECTED shapes
+                if (state.selectedShapes.length > 0) {
                     const step = snapSize > 1 ? snapSize : 10;
-                    let moved = false;
+                    let dx = 0; let dy = 0;
                     
-                    if (e.key === 'ArrowUp') { shape.y -= step; moved = true; }
-                    if (e.key === 'ArrowDown') { shape.y += step; moved = true; }
-                    if (e.key === 'ArrowLeft') { shape.x -= step; moved = true; }
-                    if (e.key === 'ArrowRight') { shape.x += step; moved = true; }
+                    if (e.key === 'ArrowUp') dy = -step;
+                    if (e.key === 'ArrowDown') dy = step;
+                    if (e.key === 'ArrowLeft') dx = -step;
+                    if (e.key === 'ArrowRight') dx = step;
                     
-                    if (moved) {
+                    if (dx !== 0 || dy !== 0) {
                         e.preventDefault(); // Prevent browser from scrolling
-                        shape.x = snap(shape.x); // Ensure it stays strictly on grid
-                        shape.y = snap(shape.y);
-                        updateShapeNode(shape);
+                        state.selectedShapes.forEach(id => {
+                            const shape = state.shapes.find(s => s.id === id);
+                            if (shape) {
+                                shape.x = snap(shape.x + dx);
+                                shape.y = snap(shape.y + dy);
+                                updateShapeNode(shape);
+                            }
+                        });
                         renderConnections();
                         saveToLocal();
                     }
@@ -415,6 +471,9 @@
                 try {
                     state = JSON.parse(saved);
                     state.connections.forEach(c => { if(c.text === undefined) c.text = ''; });
+                    // Upgrade legacy saves gracefully
+                    if(!state.selectedShapes) state.selectedShapes = state.selectedShape ? [state.selectedShape] : [];
+                    if(!state.selectedConnections) state.selectedConnections = state.selectedConnection ? [state.selectedConnection] : [];
                     renderAll();
                 } catch(e) {}
             }
@@ -455,7 +514,8 @@
         function renderShapeNode(shape) {
             const def = SHAPE_DEFS[shape.type];
             const node = document.createElement('div');
-            node.className = `shape-node ${state.selectedShape === shape.id ? 'selected' : ''}`;
+            const isSel = state.selectedShapes.includes(shape.id);
+            node.className = `shape-node ${isSel ? 'selected' : ''}`;
             node.id = `shape-${shape.id}`;
             node.style.left = `${shape.x}px`; node.style.top = `${shape.y}px`;
             node.style.width = `${shape.w}px`; node.style.height = `${shape.h}px`;
@@ -544,6 +604,8 @@
             resizeHandle.className = 'resize-handle';
             const startResizeHandler = (e) => {
                 e.stopPropagation(); if(e.cancelable) e.preventDefault();
+                // Ensure only THIS shape is selected to avoid messy multi-resize logic
+                selectShape(shape.id, false); 
                 isResizing = true;
                 const pos = getEventCanvasPos(e);
                 resizeStart = { w: shape.w, h: shape.h, startX: pos.x, startY: pos.y };
@@ -552,7 +614,7 @@
             resizeHandle.addEventListener('touchstart', startResizeHandler, {passive: false});
             node.appendChild(resizeHandle);
 
-            // Shape Dragging & Tap-to-Connect Interception
+            // Shape Dragging, Multi-Select & Tap-to-Connect Interception
             const startDrag = (e) => {
                 if (e.target.classList.contains('port') || e.target.classList.contains('resize-handle')) return;
                 if (node.classList.contains('editing')) return;
@@ -568,11 +630,29 @@
                     renderAll(); saveToLocal(); return;
                 }
 
-                selectShape(shape.id);
+                const multi = e.ctrlKey || e.metaKey;
+                if (multi) {
+                    // Just toggle selection, don't start dragging to make multi-select easy
+                    e.stopPropagation();
+                    selectShape(shape.id, true);
+                    return;
+                }
+
+                if (!state.selectedShapes.includes(shape.id)) {
+                    selectShape(shape.id, false);
+                }
+                
                 isDraggingShape = true;
                 const pos = getEventCanvasPos(e);
-                dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
+                dragOffset = { x: pos.x, y: pos.y };
+                
+                // Snapshot original positions for ALL selected shapes before dragging
+                state.selectedShapes.forEach(id => {
+                    const s = state.shapes.find(sh => sh.id === id);
+                    if (s) { s._startX = s.x; s._startY = s.y; }
+                });
             };
+            
             node.addEventListener('mousedown', startDrag);
             node.addEventListener('touchstart', startDrag, {passive: false});
 
@@ -604,7 +684,7 @@
             let svgStr = '';
             state.connections.forEach(conn => {
                 const route = getOrthogonalPath(conn);
-                const isSel = state.selectedConnection === conn.id;
+                const isSel = state.selectedConnections.includes(conn.id);
                 
                 svgStr += `<path d="${route.path}" class="connection-line ${isSel ? 'selected' : ''}" 
                                  onclick="selectConnection(${conn.id}, event)"
@@ -628,7 +708,11 @@
                 };
 
                 label.addEventListener('mousedown', e => { e.stopPropagation(); selectConnection(conn.id, e); });
-                label.addEventListener('click', e => { e.stopPropagation(); if (label.classList.contains('is-placeholder')) enterEditMode(e); });
+                label.addEventListener('click', e => { 
+                    e.stopPropagation(); 
+                    const multi = e.ctrlKey || e.metaKey;
+                    if (label.classList.contains('is-placeholder') && !multi) enterEditMode(e); 
+                });
                 label.addEventListener('dblclick', e => { e.stopPropagation(); enterEditMode(e); });
                 
                 let lastTap = 0;
@@ -820,18 +904,27 @@
         function handlePaletteTap(type) {
             const cx = canvasWrapper.scrollLeft + canvasWrapper.clientWidth / 2;
             const cy = canvasWrapper.scrollTop + canvasWrapper.clientHeight / 2;
+            
+            // Translate center coordinates backward to match zoom scale
+            const targetX = cx / scale;
+            const targetY = cy / scale;
+            
             const def = SHAPE_DEFS[type];
-            addShape(type, cx - def.defaultW/2, cy - def.defaultH/2, def.defaultText);
+            addShape(type, targetX - def.defaultW/2, targetY - def.defaultH/2, def.defaultText);
             document.getElementById('sidebar').classList.remove('mobile-open');
         }
 
         function handlePointerDown(e) {
             if (e.touches && e.touches.length === 2) {
+                // Initialize Pinch center coordinates to anchor zoom securely
                 initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                const rect = canvasWrapper.getBoundingClientRect();
+                pinchOriginX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+                pinchOriginY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
                 return;
             }
 
-            if (e.target.id === 'canvas-wrapper' || e.target.id === 'svg-layer' || e.target.id === 'bg-rect') {
+            if (['canvas-wrapper', 'canvas', 'svg-layer', 'bg-rect', 'html-layer'].includes(e.target.id)) {
                 if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) {
                     document.activeElement.blur();
                 }
@@ -847,33 +940,46 @@
         }
 
         function handlePointerMove(e) {
+            // Touch pinch zooming execution mapping back to calculated exact center coordinates
             if (e.touches && e.touches.length === 2 && initialPinchDist !== null) {
                 if(e.cancelable) e.preventDefault();
                 const currentDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-                setZoom(scale * (currentDist / initialPinchDist));
+                setZoom(scale * (currentDist / initialPinchDist), pinchOriginX, pinchOriginY);
                 initialPinchDist = currentDist;
                 return;
             }
 
             mouseCanvasPos = getEventCanvasPos(e);
 
-            if (isResizing && state.selectedShape) {
+            if (isResizing && state.selectedShapes.length > 0) {
                 if(e.cancelable) e.preventDefault();
-                const shape = state.shapes.find(s => s.id === state.selectedShape);
-                const dx = mouseCanvasPos.x - resizeStart.startX; const dy = mouseCanvasPos.y - resizeStart.startY;
-                shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.w + dx));
-                shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.h + dy));
-                updateShapeNode(shape); renderConnections();
+                const shape = state.shapes.find(s => s.id === state.selectedShapes[0]); // Size primary active
+                if(shape) {
+                    const dx = mouseCanvasPos.x - resizeStart.startX; const dy = mouseCanvasPos.y - resizeStart.startY;
+                    shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.w + dx));
+                    shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.h + dy));
+                    updateShapeNode(shape); renderConnections();
+                }
             }
-            else if (isDraggingShape && state.selectedShape) {
+            else if (isDraggingShape && state.selectedShapes.length > 0) {
                 if(e.cancelable) e.preventDefault();
-                const shape = state.shapes.find(s => s.id === state.selectedShape);
-                shape.x = snap(mouseCanvasPos.x - dragOffset.x); shape.y = snap(mouseCanvasPos.y - dragOffset.y);
-                updateShapeNode(shape); renderConnections();
+                const dx = mouseCanvasPos.x - dragOffset.x;
+                const dy = mouseCanvasPos.y - dragOffset.y;
+                
+                // Multi-drag support
+                state.selectedShapes.forEach(id => {
+                    const shape = state.shapes.find(s => s.id === id);
+                    if (shape) {
+                        shape.x = snap(shape._startX + dx);
+                        shape.y = snap(shape._startY + dy);
+                        updateShapeNode(shape);
+                    }
+                });
+                renderConnections();
             } 
             else if (isConnecting && activePort) {
                 if(e.cancelable) e.preventDefault();
-                if (!connectionDragMoved && Math.hypot(mouseCanvasPos.x - connectStartPos.x, mouseCanvasPos.y - connectStartPos.y) > 10) {
+                if (!connectionDragMoved && Math.hypot(mouseCanvasPos.x - connectStartPos.x, mouseCanvasPos.y - connectStartPos.y) > 10 / scale) {
                     connectionDragMoved = true;
                 }
                 updateTempLine(mouseCanvasPos);
@@ -949,36 +1055,77 @@
             state.shapes.push(newShape); selectShape(newShape.id); renderAll(); saveToLocal();
         }
 
-        function selectShape(id) {
-            if(state.selectedShape !== id) { state.selectedShape = id; state.selectedConnection = null; renderAll(); }
+        function selectShape(id, multi = false) {
+            if (id === null) { 
+                state.selectedShapes = []; 
+                state.selectedConnections = []; 
+            } else {
+                if (multi) {
+                    if (state.selectedShapes.includes(id)) {
+                        state.selectedShapes = state.selectedShapes.filter(s => s !== id);
+                    } else {
+                        state.selectedShapes.push(id);
+                    }
+                } else {
+                    state.selectedShapes = [id];
+                    state.selectedConnections = [];
+                }
+            }
+            renderAll(); 
         }
 
         function selectConnection(id, event) {
             if(event) event.stopPropagation(); 
-            if(state.selectedConnection === id && state.selectedShape === null) return; // FIX: Prevent destroying labels on edit clicks
-            state.selectedConnection = id; state.selectedShape = null; renderAll();
+            const multi = event && (event.ctrlKey || event.metaKey);
+
+            if(id === null) {
+                state.selectedConnections = [];
+            } else {
+                if (multi) {
+                    if (state.selectedConnections.includes(id)) {
+                        state.selectedConnections = state.selectedConnections.filter(c => c !== id);
+                    } else {
+                        state.selectedConnections.push(id);
+                    }
+                } else {
+                    // Prevent destroying active labels on edit clicks if already selected natively
+                    if (state.selectedConnections.length === 1 && state.selectedConnections[0] === id && state.selectedShapes.length === 0) return;
+                    state.selectedConnections = [id];
+                    state.selectedShapes = [];
+                }
+            }
+            renderAll();
         }
 
         function deleteSelected() {
-            if (state.selectedShape) {
-                state.shapes = state.shapes.filter(s => s.id !== state.selectedShape);
-                state.connections = state.connections.filter(c => c.fromId !== state.selectedShape && c.toId !== state.selectedShape);
-                state.selectedShape = null;
-            } else if (state.selectedConnection) {
-                state.connections = state.connections.filter(c => c.id !== state.selectedConnection); state.selectedConnection = null;
+            if (state.selectedShapes.length > 0) {
+                state.shapes = state.shapes.filter(s => !state.selectedShapes.includes(s.id));
+                state.connections = state.connections.filter(c => !state.selectedShapes.includes(c.fromId) && !state.selectedShapes.includes(c.toId));
+                state.selectedShapes = [];
+            }
+            if (state.selectedConnections.length > 0) {
+                state.connections = state.connections.filter(c => !state.selectedConnections.includes(c.id));
+                state.selectedConnections = [];
             }
             renderAll(); saveToLocal();
         }
 
         function updateDeleteButton() {
             const btn = document.getElementById('btn-delete');
-            btn.classList.toggle('hidden', !(state.selectedShape || state.selectedConnection));
+            btn.classList.toggle('hidden', !(state.selectedShapes.length > 0 || state.selectedConnections.length > 0));
         }
 
         function changeBackground() {
             const val = document.getElementById('bg-select').value;
             const rect = document.getElementById('bg-rect');
             rect.setAttribute('fill', val === 'blank' ? 'white' : `url(#bg-${val})`);
+        }
+
+        function openClearModal() { document.getElementById('clear-modal').classList.remove('hidden'); }
+        function closeClearModal() { document.getElementById('clear-modal').classList.add('hidden'); }
+        function confirmClearCanvas() {
+            state = { shapes: [], connections: [], nextShapeId: 1, nextConnId: 1, selectedShapes: [], selectedConnections: [] };
+            renderAll(); saveToLocal(); closeClearModal();
         }
 
         function changeSnap() { snapSize = parseInt(document.getElementById('snap-select').value) || 1; }
@@ -994,17 +1141,27 @@
             const file = event.target.files[0]; if (!file) return;
             const reader = new FileReader();
             reader.onload = e => {
-                try { state = JSON.parse(e.target.result); state.connections.forEach(c => { if(c.text === undefined) c.text = ''; }); renderAll(); saveToLocal(); } 
+                try { 
+                    state = JSON.parse(e.target.result); 
+                    state.connections.forEach(c => { if(c.text === undefined) c.text = ''; }); 
+                    if(!state.selectedShapes) state.selectedShapes = state.selectedShape ? [state.selectedShape] : [];
+                    if(!state.selectedConnections) state.selectedConnections = state.selectedConnection ? [state.selectedConnection] : [];
+                    renderAll(); saveToLocal(); 
+                } 
                 catch (err) { alert('Invalid JSON file'); }
             };
             reader.readAsText(file);
         }
 
         function getCanvasBlob(callback) {
-            const prevSel = state.selectedShape; const prevSelConn = state.selectedConnection;
-            state.selectedShape = null; state.selectedConnection = null; renderAll();
+            const prevSel = [...state.selectedShapes]; 
+            const prevSelConn = [...state.selectedConnections];
+            state.selectedShapes = []; state.selectedConnections = []; renderAll();
 
-            if (state.shapes.length === 0) { state.selectedShape = prevSel; state.selectedConnection = prevSelConn; renderAll(); alert("Canvas is empty!"); return; }
+            if (state.shapes.length === 0) { 
+                state.selectedShapes = prevSel; state.selectedConnections = prevSelConn; renderAll(); 
+                return; 
+            }
             
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             state.shapes.forEach(s => {
@@ -1040,7 +1197,7 @@
                 canvas.toBlob(pngBlob => { callback(pngBlob); }, 'image/png');
             };
             img.src = URL.createObjectURL(new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'}));
-            state.selectedShape = prevSel; state.selectedConnection = prevSelConn; renderAll();
+            state.selectedShapes = prevSel; state.selectedConnections = prevSelConn; renderAll();
         }
 
         function exportPNG() {
