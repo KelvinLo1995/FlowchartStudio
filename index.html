@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flowchart IO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Base styles and interactions */
+        body { margin: 0; overflow: hidden; background-color: #f8fafc; touch-action: none; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        
+        .shape-node { 
+            position: absolute; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+            user-select: none;
+            touch-action: none;
+            transition: box-shadow 0.2s;
+            z-index: 10;
+        }
+        .shape-node.selected { 
+            box-shadow: 0 0 0 2px #3b82f6, 0 4px 6px rgba(0,0,0,0.1); 
+            z-index: 20;
+        }
+        .shape-node.selected .port, .shape-node.selected .resize-handle { display: block; }
+        
+        .port { 
+            position: absolute; 
+            width: 20px; height: 20px; 
+            background: #fff; 
+            border: 2px solid #3b82f6; 
+            border-radius: 50%; 
+            transform: translate(-50%, -50%); 
+            cursor: crosshair;
+            display: none;
+            z-index: 30;
+        }
+        .port:hover { background: #3b82f6; transform: translate(-50%, -50%) scale(1.2); }
+        .port.active-port { background: #22c55e; border-color: #16a34a; transform: translate(-50%, -50%) scale(1.2); display: block; z-index: 40;}
+
+        .resize-handle {
+            position: absolute;
+            right: -6px; bottom: -6px;
+            width: 12px; height: 12px;
+            background: #fff;
+            border: 2px solid #3b82f6;
+            border-radius: 2px;
+            cursor: nwse-resize;
+            display: none;
+            z-index: 30;
+        }
+
+        /* Always show ports when actively connecting */
+        body.is-connecting .port { display: block; }
+        
+        .text-editor {
+            position: absolute; inset: 0; 
+            display: flex; align-items: center; justify-content: center;
+            text-align: center; outline: none;
+            padding: 8px; font-size: 14px; color: #1e293b;
+            word-break: break-word;
+            pointer-events: none; user-select: none;
+        }
+
+        .shape-node.editing .text-editor { pointer-events: auto; user-select: text; cursor: text; }
+
+        /* Connection Label */
+        .conn-label {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 2px 6px; border-radius: 4px;
+            font-size: 12px; color: #1e293b;
+            border: 1px solid transparent;
+            pointer-events: auto; cursor: pointer; user-select: none;
+            white-space: nowrap; z-index: 15;
+            min-height: 20px;
+        }
+        .conn-label.selected { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        .conn-label.empty { opacity: 0; pointer-events: none; }
+        .conn-label.empty.selected { opacity: 1; pointer-events: auto; border: 1px dashed #94a3b8; color: #94a3b8; background: #fff; }
+        .conn-label.editing { pointer-events: auto; user-select: text; cursor: text; border-color: #3b82f6; opacity: 1; color: #1e293b;}
+
+        /* SVG layer */
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+        .connection-line { fill: none; stroke: #64748b; stroke-width: 2; pointer-events: auto; cursor: pointer; transition: stroke 0.2s; }
+        .connection-line:hover, .connection-line.selected { stroke: #3b82f6; stroke-width: 3; }
+
+        /* Mobile sidebar hidden state */
+        @media (max-width: 768px) {
+            #sidebar { display: none; }
+            #sidebar.mobile-open { 
+                display: flex; position: absolute; top: 56px; left: 0; bottom: 0; z-index: 50; 
+                width: 260px; background: white; border-right: 1px solid #e2e8f0; box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+            }
+        }
+
+        #canvas-wrapper { overflow: auto; width: 100%; height: 100%; position: relative; cursor: grab; }
+        #canvas-wrapper:active { cursor: grabbing; }
+        #canvas { position: absolute; top: 0; left: 0; width: 4000px; height: 4000px; transform-origin: 0 0; }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden text-slate-800">
+
+    <!-- Top Toolbar -->
+    <header class="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-2 sm:px-4 z-40 shrink-0">
+        <div class="flex items-center space-x-2 shrink-0">
+            <svg class="w-6 h-6 text-blue-600 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
+            <h1 class="font-bold text-lg hidden md:block">Flowchart IO</h1>
+        </div>
+        
+        <!-- Scrollable actions area for smaller screens -->
+        <div class="flex items-center space-x-2 text-sm overflow-x-auto no-scrollbar w-full justify-start md:justify-end py-1">
+            <button onclick="toggleMobileSidebar()" class="md:hidden shrink-0 px-3 py-1.5 bg-slate-800 text-white rounded font-medium shadow-sm">Shapes</button>
+
+            <!-- Snap Toggle -->
+            <select id="snap-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500" onchange="changeSnap()">
+                <option value="20">Snap: 20px</option>
+                <option value="40">Snap: 40px</option>
+                <option value="10">Snap: 10px</option>
+                <option value="1">Snap: None</option>
+            </select>
+
+            <select id="bg-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500" onchange="changeBackground()">
+                <option value="dot">Dot Grid</option>
+                <option value="grid">Line Grid</option>
+                <option value="blank">Blank</option>
+            </select>
+
+            <button onclick="saveData()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition">Save</button>
+            <button onclick="document.getElementById('load-input').click()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition">Load</button>
+            <input type="file" id="load-input" accept=".json" class="hidden" onchange="loadData(event)">
+            
+            <button onclick="copyPNG()" class="shrink-0 px-2 sm:px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded shadow-sm transition flex items-center space-x-1" title="Copy to Clipboard">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                <span class="hidden sm:inline">Copy PNG</span>
+            </button>
+
+            <button onclick="exportPNG()" class="shrink-0 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded shadow-sm transition flex items-center space-x-1" title="Download PNG">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span class="hidden sm:inline">Export PNG</span>
+            </button>
+            
+            <!-- Delete Selected -->
+            <button onclick="deleteSelected()" id="btn-delete" class="shrink-0 px-2 py-1.5 text-red-500 hover:bg-red-50 rounded transition hidden" title="Delete Selected (Del)">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden relative">
+        <!-- Sidebar Palette -->
+        <aside id="sidebar" class="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-sm z-30">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 class="font-semibold text-slate-700">Shapes</h2>
+                <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-500 hover:text-slate-800 text-2xl leading-none px-2">&times;</button>
+            </div>
+            <div class="p-4 flex-1 overflow-y-auto space-y-4" id="palette">
+                <!-- Palette Items Injected by JS -->
+            </div>
+            <div class="p-4 text-xs text-slate-400 border-t border-slate-100">
+                <span class="md:hidden text-blue-500 font-medium block mb-2"><b>Tap</b> any shape to add to canvas.</span>
+                <span class="hidden md:inline"><b>Drag & Drop</b> to add<br></span>
+                <b>Double Click</b> shapes/lines to edit text<br>
+                <b>Ctrl+C / Ctrl+V</b> to copy and paste<br>
+                <b>Tap Port then Shape</b> to easily connect<br>
+            </div>
+        </aside>
+
+        <!-- Main Canvas Area -->
+        <main id="canvas-wrapper" class="flex-1 bg-slate-50 relative">
+            <div id="canvas">
+                <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
+                    <defs id="svg-defs">
+                        <pattern id="bg-dot" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                            <circle cx="2" cy="2" r="1" fill="#cbd5e1" />
+                        </pattern>
+                        <pattern id="bg-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+                        </pattern>
+                        <marker id="arrowhead" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+                        </marker>
+                        <marker id="arrowhead-selected" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
+                        </marker>
+                    </defs>
+                    <rect id="bg-rect" width="100%" height="100%" fill="url(#bg-dot)" />
+                    <g id="connections-group"></g>
+                    <path id="temp-line" class="connection-line" style="display: none; pointer-events: none;" marker-end="url(#arrowhead)"></path>
+                </svg>
+
+                <!-- HTML Layer for Connections text and Shapes -->
+                <div id="html-layer" class="absolute inset-0 pointer-events-none z-10"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        /* --- GEOMETRY AND SHAPE DEFINITIONS --- */
+        const SHAPE_DEFS = {
+            'process': {
+                name: 'Process', defaultText: 'Process', defaultW: 120, defaultH: 60,
+                draw: (w, h) => `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>`,
+                ports: (w, h) => [
+                    {x:0, y:0, dx:-1, dy:-1}, {x:0.5, y:0, dx:0, dy:-1}, {x:1, y:0, dx:1, dy:-1},
+                    {x:1, y:0.5, dx:1, dy:0}, {x:1, y:1, dx:1, dy:1}, {x:0.5, y:1, dx:0, dy:1},
+                    {x:0, y:1, dx:-1, dy:1}, {x:0, y:0.5, dx:-1, dy:0}
+                ]
+            },
+            'decision': {
+                name: 'Decision', defaultText: 'Decision', defaultW: 120, defaultH: 80,
+                draw: (w, h) => `<polygon points="${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>`,
+                ports: (w, h) => [
+                    {x:0.5, y:0, dx:0, dy:-1}, {x:1, y:0.5, dx:1, dy:0},
+                    {x:0.5, y:1, dx:0, dy:1}, {x:0, y:0.5, dx:-1, dy:0}
+                ]
+            },
+            'start-end': {
+                name: 'Start / End', defaultText: 'Start', defaultW: 100, defaultH: 50,
+                draw: (w, h) => `<rect x="0" y="0" width="${w}" height="${h}" rx="${h/2}" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>`,
+                ports: (w, h) => [
+                    {x:0.5, y:0, dx:0, dy:-1}, {x:0.5, y:1, dx:0, dy:1}
+                ]
+            },
+            'data-io': {
+                name: 'Data (I/O)', defaultText: 'Data', defaultW: 130, defaultH: 60,
+                draw: (w, h) => {
+                    const off = Math.min(20, w/4);
+                    return `<polygon points="${off},0 ${w},0 ${w-off},${h} 0,${h}" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>`;
+                },
+                ports: (w, h) => {
+                    const off = Math.min(20, w/4);
+                    return [
+                        {x:off/w, y:0, dx:-1, dy:-1}, {x:1, y:0, dx:1, dy:-1},
+                        {x:(w-off)/w, y:1, dx:1, dy:1}, {x:0, y:1, dx:-1, dy:1},
+                        {x:0.5, y:0, dx:0, dy:-1}, {x:(w+(w-off))/2/w, y:0.5, dx:1, dy:0},
+                        {x:(w-off)/2/w, y:1, dx:0, dy:1}, {x:off/2/w, y:0.5, dx:-1, dy:0}
+                    ];
+                }
+            },
+            'document': {
+                name: 'Document', defaultText: 'Document', defaultW: 120, defaultH: 70,
+                draw: (w, h) => {
+                    const waveH = Math.min(15, h/3);
+                    return `<path d="M 0 0 L ${w} 0 L ${w} ${h-waveH} Q ${w*0.75} ${h+waveH/2} ${w*0.5} ${h-waveH/2} T 0 ${h-waveH} Z" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>`;
+                },
+                ports: (w, h) => {
+                    const waveH = Math.min(15, h/3);
+                    return [
+                        {x:0, y:0, dx:-1, dy:-1}, {x:1, y:0, dx:1, dy:-1},
+                        {x:1, y:(h-waveH)/h, dx:1, dy:1}, {x:0, y:(h-waveH)/h, dx:-1, dy:1},
+                        {x:0.5, y:0, dx:0, dy:-1}, {x:1, y:(h-waveH)/2/h, dx:1, dy:0},
+                        {x:0.5, y:1, dx:0, dy:1}, {x:0, y:(h-waveH)/2/h, dx:-1, dy:0}
+                    ];
+                }
+            }
+        };
+
+        /* --- STATE MANAGEMENT --- */
+        let state = {
+            shapes: [],      // { id, type, x, y, w, h, text }
+            connections: [], // { id, fromId, fromPort, toId, toPort, text }
+            nextShapeId: 1,
+            nextConnId: 1,
+            selectedShape: null,
+            selectedConnection: null
+        };
+
+        /* --- UI & INTERACTION STATE --- */
+        let isDraggingShape = false;
+        let isConnecting = false;
+        let isPanning = false;
+        let isResizing = false;
+        let dragOffset = { x: 0, y: 0 };
+        let panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+        let resizeStart = { w: 0, h: 0, startX: 0, startY: 0 };
+        let activePort = null; // Used for drag AND Tap-To-Connect functionality
+        let connectionDragMoved = false; // Threshold flag to differentiate tap vs drag
+        let connectStartPos = {x: 0, y: 0};
+        let mouseCanvasPos = { x: 0, y: 0 };
+        let snapSize = 20;
+        let copiedShape = null;
+
+        function snap(val) {
+            if (snapSize <= 1) return Math.round(val);
+            return Math.round(val / snapSize) * snapSize;
+        }
+
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        const htmlLayer = document.getElementById('html-layer');
+        const connectionsGroup = document.getElementById('connections-group');
+        const tempLine = document.getElementById('temp-line');
+
+        /* --- EVENT COORDS NORMALIZATION (Crucial for iOS) --- */
+        function getEventCanvasPos(e) {
+            const rect = canvasWrapper.getBoundingClientRect();
+            const clientX = e.clientX ?? (e.touches && e.touches.length > 0 ? e.touches[0].clientX : 0);
+            const clientY = e.clientY ?? (e.touches && e.touches.length > 0 ? e.touches[0].clientY : 0);
+            return {
+                x: clientX - rect.left + canvasWrapper.scrollLeft,
+                y: clientY - rect.top + canvasWrapper.scrollTop
+            };
+        }
+
+        /* --- INITIALIZATION --- */
+        function init() {
+            buildPalette();
+            
+            canvasWrapper.scrollLeft = 2000 - canvasWrapper.clientWidth / 2;
+            canvasWrapper.scrollTop = 2000 - canvasWrapper.clientHeight / 2;
+
+            canvasWrapper.addEventListener('mousedown', handlePointerDown);
+            window.addEventListener('mousemove', handlePointerMove);
+            window.addEventListener('mouseup', handlePointerUp);
+            
+            canvasWrapper.addEventListener('touchstart', handlePointerDown, {passive: false});
+            window.addEventListener('touchmove', handlePointerMove, {passive: false});
+            window.addEventListener('touchend', handlePointerUp);
+
+            canvasWrapper.addEventListener('dragover', e => e.preventDefault());
+            canvasWrapper.addEventListener('drop', handleDrop);
+
+            window.addEventListener('keydown', e => {
+                if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) {
+                    return;
+                }
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    deleteSelected(); return;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && state.selectedShape) {
+                    const shapeToCopy = state.shapes.find(s => s.id === state.selectedShape);
+                    if (shapeToCopy) copiedShape = JSON.parse(JSON.stringify(shapeToCopy));
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && copiedShape) {
+                    const offset = snapSize > 1 ? snapSize * 2 : 20;
+                    copiedShape.x += offset; copiedShape.y += offset;
+                    const newShape = JSON.parse(JSON.stringify(copiedShape));
+                    newShape.id = state.nextShapeId++;
+                    newShape.x = snap(newShape.x); newShape.y = snap(newShape.y);
+                    state.shapes.push(newShape); selectShape(newShape.id); saveToLocal();
+                }
+
+                if (state.selectedShape) {
+                    const shape = state.shapes.find(s => s.id === state.selectedShape);
+                    if (!shape) return;
+                    const step = snapSize > 1 ? snapSize : 10;
+                    let moved = false;
+                    if (e.key === 'ArrowUp') { shape.y -= step; moved = true; }
+                    if (e.key === 'ArrowDown') { shape.y += step; moved = true; }
+                    if (e.key === 'ArrowLeft') { shape.x -= step; moved = true; }
+                    if (e.key === 'ArrowRight') { shape.x += step; moved = true; }
+                    if (moved) {
+                        e.preventDefault();
+                        shape.x = snap(shape.x); shape.y = snap(shape.y);
+                        updateShapeNode(shape); renderConnections(); saveToLocal();
+                    }
+                }
+            });
+
+            const saved = localStorage.getItem('flowchartData');
+            if (saved) {
+                try {
+                    state = JSON.parse(saved);
+                    state.connections.forEach(c => { if(c.text === undefined) c.text = ''; });
+                    renderAll();
+                } catch(e) {}
+            }
+        }
+
+        /* --- PALETTE RENDERING --- */
+        function buildPalette() {
+            const palette = document.getElementById('palette');
+            for (const [type, def] of Object.entries(SHAPE_DEFS)) {
+                const scale = 0.5;
+                const svgW = def.defaultW * scale;
+                const svgH = def.defaultH * scale;
+                const shapeHtml = `
+                    <div class="flex items-center space-x-3 p-2 rounded hover:bg-blue-50 cursor-pointer md:cursor-grab active:cursor-grabbing border border-transparent hover:border-blue-200 transition" 
+                         draggable="true" 
+                         ondragstart="handleDragStartPalette(event, '${type}')"
+                         onclick="handlePaletteTap('${type}')">
+                        <svg width="${svgW + 4}" height="${svgH + 4}" class="overflow-visible pointer-events-none">
+                            <g transform="translate(2,2) scale(${scale})">
+                                ${def.draw(def.defaultW, def.defaultH)}
+                            </g>
+                        </svg>
+                        <span class="text-sm font-medium select-none pointer-events-none">${def.name}</span>
+                    </div>
+                `;
+                palette.insertAdjacentHTML('beforeend', shapeHtml);
+            }
+        }
+
+        /* --- RENDERING ENGINE --- */
+        function renderAll() {
+            htmlLayer.innerHTML = '';
+            renderConnections(); 
+            state.shapes.forEach(shape => renderShapeNode(shape)); 
+            updateDeleteButton();
+        }
+
+        function renderShapeNode(shape) {
+            const def = SHAPE_DEFS[shape.type];
+            const node = document.createElement('div');
+            node.className = `shape-node ${state.selectedShape === shape.id ? 'selected' : ''}`;
+            node.id = `shape-${shape.id}`;
+            node.style.left = `${shape.x}px`; node.style.top = `${shape.y}px`;
+            node.style.width = `${shape.w}px`; node.style.height = `${shape.h}px`;
+            node.style.pointerEvents = 'auto';
+
+            const svgBg = `<svg class="absolute inset-0 w-full h-full pointer-events-none overflow-visible">${def.draw(shape.w, shape.h)}</svg>`;
+            
+            const textDiv = document.createElement('div');
+            textDiv.className = 'text-editor';
+            textDiv.innerHTML = shape.text;
+            textDiv.spellcheck = false;
+            textDiv.contentEditable = false; 
+            
+            const enterEditMode = (e) => {
+                e.stopPropagation();
+                node.classList.add('editing');
+                textDiv.contentEditable = true;
+                textDiv.focus();
+                const range = document.createRange(); range.selectNodeContents(textDiv);
+                const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+            };
+
+            node.addEventListener('dblclick', enterEditMode);
+            let lastTap = 0;
+            node.addEventListener('touchstart', (e) => {
+                const currentTime = new Date().getTime();
+                if (currentTime - lastTap < 500 && currentTime - lastTap > 0) {
+                    enterEditMode(e); e.preventDefault();
+                }
+                lastTap = currentTime;
+            }, {passive: false});
+
+            textDiv.addEventListener('blur', e => {
+                node.classList.remove('editing'); textDiv.contentEditable = false; window.getSelection().removeAllRanges();
+                shape.text = textDiv.innerHTML || SHAPE_DEFS[shape.type].defaultText; saveToLocal();
+            });
+
+            node.innerHTML = svgBg;
+            node.appendChild(textDiv);
+
+            // Create Ports
+            def.ports(shape.w, shape.h).forEach((portDef, idx) => {
+                const port = document.createElement('div');
+                port.className = `port ${activePort && activePort.shapeId === shape.id && activePort.portIndex === idx ? 'active-port' : ''}`;
+                port.style.left = `${portDef.x * 100}%`; port.style.top = `${portDef.y * 100}%`;
+                port.dataset.shapeId = shape.id; port.dataset.portIdx = idx;
+                
+                const startConn = (e) => {
+                    e.stopPropagation();
+                    
+                    // Unified Connection Resolution (Tap-To-Connect logic across shapes)
+                    if (activePort) {
+                        if (activePort.shapeId === shape.id && activePort.portIndex === idx) {
+                            // Cancel if tapping same port twice
+                            activePort = null; isConnecting = false;
+                            document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
+                            renderAll(); return;
+                        } else if (activePort.shapeId !== shape.id) {
+                            // Tap-To-Connect successful
+                            if(e.cancelable) e.preventDefault();
+                            state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: shape.id, toPort: idx, text: '' });
+                            activePort = null; isConnecting = false;
+                            document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
+                            renderAll(); saveToLocal(); return;
+                        }
+                    }
+
+                    // Start new connection
+                    if(e.cancelable && e.type === 'touchstart') e.preventDefault(); // Stop mobile scrolling during drag
+                    isConnecting = true; connectionDragMoved = false; connectStartPos = getEventCanvasPos(e);
+                    activePort = { shapeId: shape.id, portIndex: idx };
+                    
+                    document.body.classList.add('is-connecting'); tempLine.style.display = 'block';
+                    updateTempLine(connectStartPos);
+                    document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
+                    port.classList.add('active-port');
+                };
+                
+                port.addEventListener('mousedown', startConn);
+                port.addEventListener('touchstart', startConn, {passive: false});
+                node.appendChild(port);
+            });
+
+            // Resize Handle
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'resize-handle';
+            const startResizeHandler = (e) => {
+                e.stopPropagation(); if(e.cancelable) e.preventDefault();
+                isResizing = true;
+                const pos = getEventCanvasPos(e);
+                resizeStart = { w: shape.w, h: shape.h, startX: pos.x, startY: pos.y };
+            };
+            resizeHandle.addEventListener('mousedown', startResizeHandler);
+            resizeHandle.addEventListener('touchstart', startResizeHandler, {passive: false});
+            node.appendChild(resizeHandle);
+
+            // Shape Dragging & Tap-to-Connect Interception
+            const startDrag = (e) => {
+                if (e.target.classList.contains('port') || e.target.classList.contains('resize-handle')) return;
+                if (node.classList.contains('editing')) return;
+                
+                // Tap-to-Connect directly onto shape body
+                if (activePort && activePort.shapeId !== shape.id) {
+                    if(e.cancelable) e.preventDefault(); e.stopPropagation();
+                    const pos = getEventCanvasPos(e);
+                    const toPort = getClosestPort(shape.id, pos.x, pos.y);
+                    state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: shape.id, toPort: toPort, text: '' });
+                    activePort = null; isConnecting = false;
+                    document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
+                    renderAll(); saveToLocal(); return;
+                }
+
+                selectShape(shape.id);
+                isDraggingShape = true;
+                const pos = getEventCanvasPos(e);
+                dragOffset = { x: pos.x - shape.x, y: pos.y - shape.y };
+            };
+            node.addEventListener('mousedown', startDrag);
+            node.addEventListener('touchstart', startDrag, {passive: false});
+
+            htmlLayer.appendChild(node);
+        }
+
+        function updateShapeNode(shape) {
+            const node = document.getElementById(`shape-${shape.id}`);
+            if (node) {
+                node.style.width = `${shape.w}px`; node.style.height = `${shape.h}px`;
+                node.style.left = `${shape.x}px`; node.style.top = `${shape.y}px`;
+                
+                const svg = node.querySelector('svg');
+                const def = SHAPE_DEFS[shape.type];
+                if (svg) svg.innerHTML = def.draw(shape.w, shape.h);
+                
+                const portDefs = def.ports(shape.w, shape.h);
+                const ports = node.querySelectorAll('.port');
+                ports.forEach((p, idx) => {
+                    p.style.left = `${portDefs[idx].x * 100}%`; p.style.top = `${portDefs[idx].y * 100}%`;
+                });
+            }
+        }
+
+        function renderConnections() {
+            let svgStr = '';
+            state.connections.forEach(conn => {
+                const route = getOrthogonalPath(conn);
+                const isSel = state.selectedConnection === conn.id;
+                
+                svgStr += `<path d="${route.path}" class="connection-line ${isSel ? 'selected' : ''}" 
+                                 onclick="selectConnection(${conn.id}, event)"
+                                 marker-end="url(#arrowhead${isSel ? '-selected' : ''})"></path>`;
+                
+                const label = document.createElement('div');
+                const isPlaceholder = !conn.text && isSel;
+
+                label.className = `conn-label ${isSel ? 'selected' : ''} ${!conn.text && !isSel ? 'empty' : ''} ${isPlaceholder ? 'is-placeholder' : ''}`;
+                label.style.left = `${route.midX}px`; label.style.top = `${route.midY}px`;
+                label.innerText = isPlaceholder ? 'Add Label...' : (conn.text || '');
+                label.contentEditable = false;
+
+                const enterEditMode = (e) => {
+                    e.stopPropagation();
+                    if (label.classList.contains('editing')) return;
+                    if (label.classList.contains('is-placeholder')) { label.innerText = ''; label.classList.remove('is-placeholder'); }
+                    label.classList.add('editing'); label.contentEditable = true; label.focus();
+                    const range = document.createRange(); range.selectNodeContents(label);
+                    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+                };
+
+                label.addEventListener('mousedown', e => { e.stopPropagation(); selectConnection(conn.id, e); });
+                label.addEventListener('click', e => { e.stopPropagation(); if (label.classList.contains('is-placeholder')) enterEditMode(e); });
+                label.addEventListener('dblclick', e => { e.stopPropagation(); enterEditMode(e); });
+                
+                let lastTap = 0;
+                label.addEventListener('touchstart', (e) => {
+                    const currentTime = new Date().getTime();
+                    if (label.classList.contains('is-placeholder')) {
+                        if (!label.classList.contains('editing')) enterEditMode(e);
+                        e.preventDefault();
+                    } else if (currentTime - lastTap < 500 && currentTime - lastTap > 0) {
+                        if (!label.classList.contains('editing')) enterEditMode(e);
+                        e.preventDefault();
+                    }
+                    lastTap = currentTime;
+                }, {passive: false});
+
+                label.addEventListener('blur', e => {
+                    label.classList.remove('editing'); label.contentEditable = false; window.getSelection().removeAllRanges();
+                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); saveToLocal(); renderAll();
+                });
+
+                htmlLayer.appendChild(label);
+            });
+            connectionsGroup.innerHTML = svgStr;
+        }
+
+        /* --- ROUTING & MATH LOGIC --- */
+        function getClosestPort(shapeId, targetX, targetY) {
+            const shape = state.shapes.find(s => s.id === shapeId);
+            const def = SHAPE_DEFS[shape.type];
+            const ports = def.ports(shape.w, shape.h);
+            let minDist = Infinity, bestIdx = 0;
+            ports.forEach((p, i) => {
+                const px = shape.x + shape.w * p.x; const py = shape.y + shape.h * p.y;
+                const d = Math.hypot(px - targetX, py - targetY);
+                if(d < minDist) { minDist = d; bestIdx = i; }
+            });
+            return bestIdx;
+        }
+
+        function getPortAbsolutePos(shapeId, portIndex) {
+            const shape = state.shapes.find(s => s.id == shapeId);
+            if(!shape) return null;
+            const portDefs = SHAPE_DEFS[shape.type].ports(shape.w, shape.h);
+            const portDef = portDefs[portIndex];
+            return { x: shape.x + shape.w * portDef.x, y: shape.y + shape.h * portDef.y, dx: portDef.dx, dy: portDef.dy };
+        }
+
+        function getMidPoint(pts) {
+            let total = 0; const segs = [];
+            for(let i=0; i<pts.length-1; i++) {
+                const d = Math.hypot(pts[i+1].x - pts[i].x, pts[i+1].y - pts[i].y);
+                total += d; segs.push({d, p1: pts[i], p2: pts[i+1]});
+            }
+            if (total === 0) return pts[0];
+            let target = total / 2;
+            for(let seg of segs) {
+                if (target <= seg.d + 0.001) {
+                    const ratio = seg.d === 0 ? 0.5 : target / seg.d;
+                    return { x: seg.p1.x + (seg.p2.x - seg.p1.x)*ratio, y: seg.p1.y + (seg.p2.y - seg.p1.y)*ratio };
+                }
+                target -= seg.d;
+            }
+            return pts[pts.length-1];
+        }
+
+        function getOrthogonalPath(conn) {
+            const p1 = getPortAbsolutePos(conn.fromId, conn.fromPort);
+            const p2 = getPortAbsolutePos(conn.toId, conn.toPort);
+            if (!p1 || !p2) return {path: '', midX:0, midY:0};
+            return routeOrthogonal(p1, p2, conn.fromId, conn.toId);
+        }
+
+        function routeOrthogonal(p1, p2, fromId, toId) {
+            const MARGIN = 15; const STANDOFF = 25; 
+            const start = { x: p1.x + p1.dx * STANDOFF, y: p1.y + p1.dy * STANDOFF };
+            const end = { x: p2.x + p2.dx * STANDOFF, y: p2.y + p2.dy * STANDOFF };
+
+            let xs = new Set([start.x, end.x, p1.x, p2.x]); let ys = new Set([start.y, end.y, p1.y, p2.y]);
+
+            const rects = state.shapes.map(s => ({
+                id: s.id, l: s.x - MARGIN, r: s.x + s.w + MARGIN, t: s.y - MARGIN, b: s.y + s.h + MARGIN
+            }));
+
+            const activeRects = rects.filter(r => {
+                const startTrapped = start.x >= r.l && start.x <= r.r && start.y >= r.t && start.y <= r.b;
+                const endTrapped = end.x >= r.l && end.x <= r.r && end.y >= r.t && end.y <= r.b;
+                return !startTrapped && !endTrapped;
+            });
+
+            activeRects.forEach(r => { xs.add(r.l); xs.add(r.r); ys.add(r.t); ys.add(r.b); });
+
+            let minX = Math.min(...xs) - 50, maxX = Math.max(...xs) + 50;
+            let minY = Math.min(...ys) - 50, maxY = Math.max(...ys) + 50;
+            xs.add(minX); xs.add(maxX); ys.add(minY); ys.add(maxY);
+
+            const xArr = Array.from(xs).sort((a,b)=>a-b); const yArr = Array.from(ys).sort((a,b)=>a-b);
+            const sx = xArr.indexOf(start.x), sy = yArr.indexOf(start.y);
+            const ex = xArr.indexOf(end.x), ey = yArr.indexOf(end.y);
+
+            function isEdgeBlocked(xi1, yi1, xi2, yi2) {
+                const px = (xArr[xi1] + xArr[xi2]) / 2; const py = (yArr[yi1] + yArr[yi2]) / 2;
+                for(let r of activeRects) { if (px > r.l && px < r.r && py > r.t && py < r.b) return true; }
+                return false;
+            }
+
+            const open = [{x: sx, y: sy, path: [], g: 0, f: 0, dir: null}];
+            const closed = new Set();
+            let found = null; let iters = 0;
+
+            while(open.length > 0 && iters < 10000) {
+                iters++;
+                let minIdx = 0;
+                for(let i=1; i<open.length; i++) { if(open[i].f < open[minIdx].f) minIdx = i; }
+                const curr = open[minIdx];
+                open[minIdx] = open[open.length - 1]; open.pop();
+
+                if (curr.x === ex && curr.y === ey) { found = curr.path.concat([{x: ex, y: ey}]); break; }
+
+                const key = `${curr.x},${curr.y},${curr.dir}`;
+                if(closed.has(key)) continue; closed.add(key);
+
+                const dirs = [{dx: 0, dy: -1, dir: 'N'}, {dx: 1, dy: 0, dir: 'E'}, {dx: 0, dy: 1, dir: 'S'}, {dx: -1, dy: 0, dir: 'W'}];
+
+                for(let d of dirs) {
+                    const nx = curr.x + d.dx; const ny = curr.y + d.dy;
+                    if (nx < 0 || nx >= xArr.length || ny < 0 || ny >= yArr.length) continue;
+                    if (isEdgeBlocked(curr.x, curr.y, nx, ny)) continue;
+
+                    const dist = Math.abs(xArr[nx] - xArr[curr.x]) + Math.abs(yArr[ny] - yArr[curr.y]);
+                    let g = curr.g + dist; if (curr.dir && curr.dir !== d.dir) g += 20; 
+                    const h = Math.abs(xArr[nx] - xArr[ex]) + Math.abs(yArr[ny] - yArr[ey]);
+                    open.push({ x: nx, y: ny, path: curr.path.concat([{x: curr.x, y: curr.y}]), g: g, f: g + h, dir: d.dir });
+                }
+            }
+
+            if (!found) return calculateSimpleRoute(p1, p2);
+
+            let pts = [{x: p1.x, y: p1.y}, start];
+            for (let i = 1; i < found.length - 1; i++) {
+                const prev = found[i-1], cur = found[i], nxt = found[i+1];
+                if (prev.x !== nxt.x && prev.y !== nxt.y) pts.push({x: xArr[cur.x], y: yArr[cur.y]});
+            }
+            if (found.length > 1) pts.push({x: xArr[found[found.length - 1].x], y: yArr[found[found.length - 1].y]});
+            else pts.push({x: xArr[ex], y: yArr[ey]});
+            pts.push(end, {x: p2.x, y: p2.y});
+            
+            let d = `M ${pts[0].x} ${pts[0].y} `;
+            for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
+            const mid = getMidPoint(pts);
+            return { path: d, midX: mid.x, midY: mid.y };
+        }
+
+        function calculateSimpleRoute(p1, p2) {
+            const margin = 20;
+            const start = { x: p1.x + p1.dx * margin, y: p1.y + p1.dy * margin };
+            const end = { x: p2.x + p2.dx * margin, y: p2.y + p2.dy * margin };
+            let pts = [{x: p1.x, y: p1.y}, start];
+            let midX = (start.x + end.x) / 2; let midY = (start.y + end.y) / 2;
+            
+            if (p1.dx !== 0 && p2.dx !== 0) {
+                if (Math.sign(p1.dx) !== Math.sign(p2.dx)) { pts.push({x: midX, y: start.y}, {x: midX, y: end.y});
+                } else { let farX = p1.dx > 0 ? Math.max(start.x, end.x) + 20 : Math.min(start.x, end.x) - 20; pts.push({x: farX, y: start.y}, {x: farX, y: end.y}); }
+            } else if (p1.dy !== 0 && p2.dy !== 0) {
+                if (Math.sign(p1.dy) !== Math.sign(p2.dy)) { pts.push({x: start.x, y: midY}, {x: end.x, y: midY});
+                } else { let farY = p1.dy > 0 ? Math.max(start.y, end.y) + 20 : Math.min(start.y, end.y) - 20; pts.push({x: start.x, y: farY}, {x: end.x, y: farY}); }
+            } else {
+                if (p1.dx !== 0) pts.push({x: end.x, y: start.y}); else pts.push({x: start.x, y: end.y});
+            }
+            pts.push(end, {x: p2.x, y: p2.y});
+            let d = `M ${pts[0].x} ${pts[0].y} `;
+            for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
+            const mid = getMidPoint(pts); return { path: d, midX: mid.x, midY: mid.y };
+        }
+
+        /* --- EVENT HANDLERS --- */
+        function handleDragStartPalette(e, type) { e.dataTransfer.setData('text/plain', type); }
+        function handleDrop(e) {
+            e.preventDefault();
+            const type = e.dataTransfer.getData('text/plain');
+            if (SHAPE_DEFS[type]) {
+                const pos = getEventCanvasPos(e);
+                const def = SHAPE_DEFS[type];
+                addShape(type, pos.x - def.defaultW/2, pos.y - def.defaultH/2);
+            }
+        }
+
+        function handlePaletteTap(type) {
+            const cx = canvasWrapper.scrollLeft + canvasWrapper.clientWidth / 2;
+            const cy = canvasWrapper.scrollTop + canvasWrapper.clientHeight / 2;
+            const def = SHAPE_DEFS[type];
+            addShape(type, cx - def.defaultW/2, cy - def.defaultH/2, def.defaultText);
+            document.getElementById('sidebar').classList.remove('mobile-open');
+        }
+
+        function handlePointerDown(e) {
+            if (e.target.id === 'canvas-wrapper' || e.target.id === 'svg-layer' || e.target.id === 'bg-rect') {
+                if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) {
+                    document.activeElement.blur();
+                }
+                if (activePort) {
+                    activePort = null; isConnecting = false;
+                    document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
+                    document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
+                }
+                selectShape(null); selectConnection(null);
+                isPanning = true;
+                panStart = { x: e.clientX ?? e.touches[0].clientX, y: e.clientY ?? e.touches[0].clientY, scrollLeft: canvasWrapper.scrollLeft, scrollTop: canvasWrapper.scrollTop };
+            }
+        }
+
+        function handlePointerMove(e) {
+            mouseCanvasPos = getEventCanvasPos(e);
+
+            if (isResizing && state.selectedShape) {
+                if(e.cancelable) e.preventDefault();
+                const shape = state.shapes.find(s => s.id === state.selectedShape);
+                const dx = mouseCanvasPos.x - resizeStart.startX; const dy = mouseCanvasPos.y - resizeStart.startY;
+                shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.w + dx));
+                shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.h + dy));
+                updateShapeNode(shape); renderConnections();
+            }
+            else if (isDraggingShape && state.selectedShape) {
+                if(e.cancelable) e.preventDefault();
+                const shape = state.shapes.find(s => s.id === state.selectedShape);
+                shape.x = snap(mouseCanvasPos.x - dragOffset.x); shape.y = snap(mouseCanvasPos.y - dragOffset.y);
+                updateShapeNode(shape); renderConnections();
+            } 
+            else if (isConnecting && activePort) {
+                if(e.cancelable) e.preventDefault();
+                if (!connectionDragMoved && Math.hypot(mouseCanvasPos.x - connectStartPos.x, mouseCanvasPos.y - connectStartPos.y) > 10) {
+                    connectionDragMoved = true;
+                }
+                updateTempLine(mouseCanvasPos);
+                tempLine.style.display = 'block'; // Make sure line stays visible while dragging
+            }
+            else if (isPanning) {
+                if(e.cancelable) e.preventDefault();
+                const clientX = e.clientX ?? e.touches[0].clientX; const clientY = e.clientY ?? e.touches[0].clientY;
+                canvasWrapper.scrollLeft = panStart.scrollLeft - (clientX - panStart.x);
+                canvasWrapper.scrollTop = panStart.scrollTop - (clientY - panStart.y);
+            }
+        }
+
+        function handlePointerUp(e) {
+            if (isResizing || isDraggingShape) saveToLocal();
+            
+            if (isConnecting) {
+                const clientX = e.clientX ?? (e.changedTouches ? e.changedTouches[0].clientX : 0);
+                const clientY = e.clientY ?? (e.changedTouches ? e.changedTouches[0].clientY : 0);
+                const el = document.elementFromPoint(clientX, clientY);
+                
+                let connected = false;
+
+                // Drag-to-connect resolution
+                if (el && connectionDragMoved) {
+                    const dropShape = el.closest('.shape-node');
+                    if (dropShape) {
+                        const toId = parseInt(dropShape.id.split('-')[1]);
+                        if (toId !== activePort.shapeId) {
+                            const toPort = getClosestPort(toId, mouseCanvasPos.x, mouseCanvasPos.y);
+                            state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: toId, toPort: toPort, text: '' });
+                            connected = true;
+                        }
+                    } else if (el.classList.contains('port')) {
+                        const toId = parseInt(el.dataset.shapeId); const toPort = parseInt(el.dataset.portIdx);
+                        if (toId !== activePort.shapeId) {
+                            state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: toId, toPort: toPort, text: '' });
+                            connected = true;
+                        }
+                    }
+                }
+                
+                if (connected) {
+                    activePort = null; isConnecting = false;
+                    document.body.classList.remove('is-connecting'); document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
+                    saveToLocal(); tempLine.style.display = 'none'; renderConnections();
+                } else if (connectionDragMoved) {
+                    // Dragged but dropped in empty space => Cancel
+                    activePort = null; isConnecting = false;
+                    document.body.classList.remove('is-connecting'); document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
+                    tempLine.style.display = 'none'; renderConnections();
+                }
+                // IF !connectionDragMoved (It was just a Tap): DO NOTHING! Leave it connecting so they can Tap the destination!
+            }
+            
+            isDraggingShape = false; isPanning = false; isResizing = false;
+        }
+
+        function updateTempLine(endPos) {
+            const p1 = getPortAbsolutePos(activePort.shapeId, activePort.portIndex);
+            const p2 = { x: endPos.x, y: endPos.y, dx: 0, dy: -1 }; 
+            tempLine.setAttribute('d', calculateSimpleRoute(p1, p2).path);
+        }
+
+        /* --- ACTIONS --- */
+        function addShape(type, x, y, text) {
+            const def = SHAPE_DEFS[type];
+            const newShape = { id: state.nextShapeId++, type: type, x: snap(x), y: snap(y), w: snap(def.defaultW), h: snap(def.defaultH), text: text || def.defaultText };
+            state.shapes.push(newShape); selectShape(newShape.id); renderAll(); saveToLocal();
+        }
+
+        function selectShape(id) {
+            if(state.selectedShape !== id) { state.selectedShape = id; state.selectedConnection = null; renderAll(); }
+        }
+
+        function selectConnection(id, event) {
+            if(event) event.stopPropagation(); state.selectedConnection = id; state.selectedShape = null; renderAll();
+        }
+
+        function deleteSelected() {
+            if (state.selectedShape) {
+                state.shapes = state.shapes.filter(s => s.id !== state.selectedShape);
+                state.connections = state.connections.filter(c => c.fromId !== state.selectedShape && c.toId !== state.selectedShape);
+                state.selectedShape = null;
+            } else if (state.selectedConnection) {
+                state.connections = state.connections.filter(c => c.id !== state.selectedConnection); state.selectedConnection = null;
+            }
+            renderAll(); saveToLocal();
+        }
+
+        function updateDeleteButton() {
+            const btn = document.getElementById('btn-delete');
+            btn.classList.toggle('hidden', !(state.selectedShape || state.selectedConnection));
+        }
+
+        function changeBackground() {
+            const val = document.getElementById('bg-select').value;
+            const rect = document.getElementById('bg-rect');
+            rect.setAttribute('fill', val === 'blank' ? 'white' : `url(#bg-${val})`);
+        }
+
+        function changeSnap() { snapSize = parseInt(document.getElementById('snap-select').value) || 1; }
+        function toggleMobileSidebar() { document.getElementById('sidebar').classList.toggle('mobile-open'); }
+
+        /* --- DATA PERSISTENCE & EXPORT --- */
+        function saveToLocal() { localStorage.setItem('flowchartData', JSON.stringify(state)); }
+        function saveData() {
+            const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state)); a.download = "flowchart.json";
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        function loadData(event) {
+            const file = event.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                try { state = JSON.parse(e.target.result); state.connections.forEach(c => { if(c.text === undefined) c.text = ''; }); renderAll(); saveToLocal(); } 
+                catch (err) { alert('Invalid JSON file'); }
+            };
+            reader.readAsText(file);
+        }
+
+        function getCanvasBlob(callback) {
+            const prevSel = state.selectedShape; const prevSelConn = state.selectedConnection;
+            state.selectedShape = null; state.selectedConnection = null; renderAll();
+
+            if (state.shapes.length === 0) { state.selectedShape = prevSel; state.selectedConnection = prevSelConn; renderAll(); alert("Canvas is empty!"); return; }
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            state.shapes.forEach(s => {
+                minX = Math.min(minX, s.x); minY = Math.min(minY, s.y);
+                maxX = Math.max(maxX, s.x + s.w); maxY = Math.max(maxY, s.y + s.h);
+            });
+            const pad = 40; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+
+            let svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxX-minX}" height="${maxY-minY}" viewBox="${minX} ${minY} ${maxX-minX} ${maxY-minY}">`;
+            svgStr += document.getElementById('svg-defs').outerHTML;
+            svgStr += `<rect x="${minX}" y="${minY}" width="${maxX-minX}" height="${maxY-minY}" fill="${document.getElementById('bg-select').value === 'blank' ? 'white' : '#f8fafc'}" />`;
+            
+            svgStr += `<g>`;
+            state.connections.forEach(conn => {
+                const route = getOrthogonalPath(conn);
+                svgStr += `<path d="${route.path}" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrowhead)"></path>`;
+                if (conn.text) {
+                    svgStr += `<text x="${route.midX}" y="${route.midY}" dominant-baseline="central" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1e293b" paint-order="stroke" stroke="white" stroke-width="4">${conn.text.replace(/<[^>]*>?/gm, '')}</text>`;
+                }
+            });
+            svgStr += `</g>`;
+
+            state.shapes.forEach(s => {
+                svgStr += `<g transform="translate(${s.x}, ${s.y})">${SHAPE_DEFS[s.type].draw(s.w, s.h)}`;
+                svgStr += `<text x="${s.w/2}" y="${s.h/2}" dominant-baseline="central" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1e293b">${s.text.replace(/<[^>]*>?/gm, '')}</text></g>`;
+            });
+            svgStr += `</svg>`;
+
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas'); canvas.width = maxX-minX; canvas.height = maxY-minY;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+                canvas.toBlob(pngBlob => { callback(pngBlob); }, 'image/png');
+            };
+            img.src = URL.createObjectURL(new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'}));
+            state.selectedShape = prevSel; state.selectedConnection = prevSelConn; renderAll();
+        }
+
+        function exportPNG() {
+            getCanvasBlob(pngBlob => {
+                const url = URL.createObjectURL(pngBlob); const a = document.createElement('a');
+                a.href = url; a.download = "flowchart.png"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            });
+        }
+
+        function copyPNG() {
+            getCanvasBlob(pngBlob => {
+                try {
+                    navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]).then(() => alert('Copied to clipboard!')).catch(err => alert('Clipboard blocked. Please use Export PNG instead.'));
+                } catch (e) { alert('Clipboard copy failed. Please use Export PNG instead.'); }
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
