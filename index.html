@@ -71,7 +71,7 @@
             position: absolute; inset: 0; 
             display: flex; align-items: center; justify-content: center;
             text-align: center; outline: none;
-            padding: 8px; font-size: 14px; color: #1e293b;
+            padding: 8px; font-size: 18px; color: #1e293b;
             word-break: break-word;
             pointer-events: none; user-select: none;
         }
@@ -83,7 +83,7 @@
             transform: translate(-50%, -50%);
             background: rgba(255, 255, 255, 0.9);
             padding: 2px 6px; border-radius: 4px;
-            font-size: 12px; color: #1e293b;
+            font-size: 18px; color: #1e293b;
             border: 1px solid transparent;
             pointer-events: auto; cursor: pointer; user-select: none;
             white-space: nowrap; z-index: 15;
@@ -131,6 +131,14 @@
 
             <!-- New Button -->
             <button onclick="openClearModal()" class="shrink-0 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded transition font-medium border border-red-200">New</button>
+            
+            <!-- Undo/Redo Buttons -->
+            <button onclick="undo()" class="shrink-0 px-2 py-1.5 hover:bg-slate-100 rounded text-slate-600 transition" title="Undo (Ctrl+Z)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+            </button>
+            <button onclick="redo()" class="shrink-0 px-2 py-1.5 hover:bg-slate-100 rounded text-slate-600 transition" title="Redo (Ctrl+Y)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path></svg>
+            </button>
 
             <!-- Zoom Controls -->
             <div class="flex items-center shrink-0 bg-slate-50 border border-slate-300 rounded overflow-hidden">
@@ -141,10 +149,10 @@
 
             <!-- Snap Toggle -->
             <select id="snap-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500 hidden md:block" onchange="changeSnap(this.value)">
+                <option value="5">Snap: 5px</option>
+                <option value="10" selected>Snap: 10px</option>
                 <option value="20">Snap: 20px</option>
                 <option value="40">Snap: 40px</option>
-                <option value="10">Snap: 10px</option>
-                <option value="1">Snap: None</option>
             </select>
 
             <select id="bg-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500 hidden md:block" onchange="changeBackground(this.value)">
@@ -181,11 +189,12 @@
             <option value="ui-sans-serif, system-ui, sans-serif">Sans-Serif</option>
             <option value="ui-serif, Georgia, serif">Serif</option>
             <option value="ui-monospace, monospace">Monospace</option>
+            <option value="'Consolas', monospace">Consolas</option>
             <option value="Arial, sans-serif">Arial</option>
             <option value="'Courier New', Courier, monospace">Courier New</option>
             <option value="'Times New Roman', Times, serif">Times New</option>
         </select>
-        <input type="number" id="inp-size" onchange="applyFormat('fontSize', this.value)" class="border border-slate-300 rounded px-2 py-1 w-12 md:w-16 bg-white focus:outline-none focus:border-blue-500 text-xs md:text-sm" placeholder="14">
+        <input type="number" id="inp-size" onchange="applyFormat('fontSize', this.value)" class="border border-slate-300 rounded px-2 py-1 w-12 md:w-16 bg-white focus:outline-none focus:border-blue-500 text-xs md:text-sm" placeholder="18">
         
         <div class="flex items-center space-x-1 border-l border-slate-300 pl-3">
             <button id="btn-bold" onclick="toggleFormat('fontWeight', 'bold', 'normal')" class="px-3 py-1.5 md:px-2 md:py-1 border border-slate-200 rounded text-slate-600 hover:bg-slate-200 transition font-bold">B</button>
@@ -218,7 +227,9 @@
                 <span class="hidden md:inline"><b>Drag & Drop</b> to add<br></span>
                 <b>Double Click</b> to edit text<br>
                 <b>Ctrl + Click</b> to multi-select<br>
-                <b>Ctrl+A / C / V</b> to select/copy/paste<br>
+                <b>Ctrl + Drag Edge</b> to lock ratio<br>
+                <b>Ctrl+C / V</b> to copy/paste shape+arrow<br>
+                <b>Ctrl+Z / Y</b> to undo/redo<br>
                 <b>Tap Port then Shape</b> to easily connect<br>
             </div>
         </aside>
@@ -292,10 +303,10 @@
                         <option value="blank">Blank</option>
                     </select>
                     <select id="snap-select-mobile" class="flex-1 border border-slate-200 rounded-xl p-3 bg-slate-50 font-medium text-slate-700" onchange="changeSnap(this.value)">
+                        <option value="5">Snap: 5px</option>
+                        <option value="10" selected>Snap: 10px</option>
                         <option value="20">Snap: 20px</option>
                         <option value="40">Snap: 40px</option>
-                        <option value="10">Snap: 10px</option>
-                        <option value="1">Snap: None</option>
                     </select>
                 </div>
             </div>
@@ -382,11 +393,11 @@
                 name: 'Image', defaultText: '', defaultW: 150, defaultH: 150,
                 draw: (w, h, shape) => {
                     if (shape && shape.imgData) {
-                        return `<image href="${shape.imgData}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none"/>
-                                <rect x="0" y="0" width="100%" height="100%" fill="none" stroke="transparent" stroke-width="2"/>`;
+                        return `<image href="${shape.imgData}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none"/>
+                                <rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="transparent" stroke-width="2"/>`;
                     } else {
-                        return `<rect x="0" y="0" width="100%" height="100%" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="5,5" stroke-width="2"/>
-                                <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" font-size="12" font-family="sans-serif" fill="#64748b" pointer-events="none">Drag/Paste/Dbl-Click Image</text>`;
+                        return `<rect x="0" y="0" width="${w}" height="${h}" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="5,5" stroke-width="2"/>
+                                <text x="${w/2}" y="${h/2}" text-anchor="middle" dominant-baseline="central" font-size="12" font-family="sans-serif" fill="#64748b" pointer-events="none">Drag/Paste/Dbl-Click Image</text>`;
                     }
                 },
                 ports: (w, h) => [
@@ -407,6 +418,11 @@
             selectedConnections: [] 
         };
 
+        // History state for Undo/Redo
+        let history = [];
+        let historyIndex = -1;
+        let isUndoing = false;
+
         /* --- UI & INTERACTION STATE --- */
         let isDraggingShape = false;
         let isConnecting = false;
@@ -419,15 +435,16 @@
         let connectionDragMoved = false; 
         let connectStartPos = {x: 0, y: 0};
         let mouseCanvasPos = { x: 0, y: 0 };
-        let snapSize = 20;
-        let copiedShapes = [];
+        let snapSize = 10;
         let scale = 1;
         
         let uploadingShapeId = null; 
-        
         let initialPinchDist = null;
         let pinchOriginX = 0;
         let pinchOriginY = 0;
+
+        let copiedShapes = [];
+        let copiedConnections = [];
 
         function snap(val) {
             if (snapSize <= 1) return Math.round(val);
@@ -475,6 +492,51 @@
             };
         }
 
+        /* --- DATA PERSISTENCE & HISTORY --- */
+        function commitState() {
+            if (isUndoing) return; // Prevent overwriting history during undo operations
+            const stateStr = JSON.stringify(state);
+            
+            // Check if identical to current state to prevent duplicate pushes
+            if (historyIndex >= 0 && history[historyIndex] === stateStr) {
+                return;
+            }
+            
+            // Truncate future history if we are inserting something new
+            if (historyIndex < history.length - 1) {
+                history = history.slice(0, historyIndex + 1);
+            }
+            history.push(stateStr);
+            if (history.length > 50) history.shift(); // Max 50 states
+            else historyIndex++;
+            
+            localStorage.setItem('flowchartData', stateStr);
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                isUndoing = true;
+                state = JSON.parse(history[historyIndex]);
+                localStorage.setItem('flowchartData', history[historyIndex]);
+                renderAll();
+                updateFormatToolbar();
+                isUndoing = false;
+            }
+        }
+
+        function redo() {
+            if (historyIndex < history.length - 1) {
+                historyIndex++;
+                isUndoing = true;
+                state = JSON.parse(history[historyIndex]);
+                localStorage.setItem('flowchartData', history[historyIndex]);
+                renderAll();
+                updateFormatToolbar();
+                isUndoing = false;
+            }
+        }
+
         /* --- INITIALIZATION --- */
         function init() {
             buildPalette();
@@ -503,6 +565,29 @@
                 }
             }, {passive: false});
 
+            window.addEventListener('copy', e => {
+                if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) return;
+                if (state.selectedShapes.length > 0 || state.selectedConnections.length > 0) {
+                    copiedShapes = state.shapes.filter(s => state.selectedShapes.includes(s.id)).map(s => JSON.parse(JSON.stringify(s)));
+                    copiedConnections = state.connections.filter(c => state.selectedConnections.includes(c.id) || (state.selectedShapes.includes(c.fromId) && state.selectedShapes.includes(c.toId))).map(c => JSON.parse(JSON.stringify(c)));
+                    const clipData = JSON.stringify({ type: 'flowchart-io', shapes: copiedShapes, connections: copiedConnections }, null, 2);
+                    e.clipboardData.setData('text/plain', clipData);
+                    e.preventDefault();
+                }
+            });
+
+            window.addEventListener('cut', e => {
+                if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) return;
+                if (state.selectedShapes.length > 0 || state.selectedConnections.length > 0) {
+                    copiedShapes = state.shapes.filter(s => state.selectedShapes.includes(s.id)).map(s => JSON.parse(JSON.stringify(s)));
+                    copiedConnections = state.connections.filter(c => state.selectedConnections.includes(c.id) || (state.selectedShapes.includes(c.fromId) && state.selectedShapes.includes(c.toId))).map(c => JSON.parse(JSON.stringify(c)));
+                    const clipData = JSON.stringify({ type: 'flowchart-io', shapes: copiedShapes, connections: copiedConnections }, null, 2);
+                    e.clipboardData.setData('text/plain', clipData);
+                    deleteSelected();
+                    e.preventDefault();
+                }
+            });
+
             window.addEventListener('paste', handleGlobalPaste);
 
             window.addEventListener('keydown', e => {
@@ -514,6 +599,18 @@
                     deleteSelected();
                     return;
                 }
+                
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                    e.preventDefault();
+                    undo();
+                    return;
+                }
+                
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                    e.preventDefault();
+                    redo();
+                    return;
+                }
 
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
                     e.preventDefault();
@@ -521,36 +618,6 @@
                     state.selectedConnections = state.connections.map(c => c.id);
                     updateFormatToolbar();
                     renderAll();
-                }
-
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-                    if (state.selectedShapes.length > 0) {
-                        copiedShapes = state.shapes.filter(s => state.selectedShapes.includes(s.id)).map(s => JSON.parse(JSON.stringify(s)));
-                    }
-                }
-
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                    if (copiedShapes && copiedShapes.length > 0) {
-                        const offset = snapSize > 1 ? snapSize * 2 : 20;
-                        let newSelectedIds = [];
-                        
-                        copiedShapes.forEach(cs => {
-                            cs.x += offset;
-                            cs.y += offset;
-                            const newShape = JSON.parse(JSON.stringify(cs));
-                            newShape.id = state.nextShapeId++;
-                            newShape.x = snap(newShape.x);
-                            newShape.y = snap(newShape.y);
-                            state.shapes.push(newShape);
-                            newSelectedIds.push(newShape.id);
-                        });
-                        
-                        state.selectedShapes = newSelectedIds;
-                        state.selectedConnections = [];
-                        saveToLocal();
-                        updateFormatToolbar();
-                        renderAll();
-                    }
                 }
 
                 if (state.selectedShapes.length > 0) {
@@ -573,7 +640,7 @@
                             }
                         });
                         renderConnections();
-                        saveToLocal();
+                        commitState();
                     }
                 }
             });
@@ -584,9 +651,15 @@
                 reader.onload = (ev) => {
                     const shape = state.shapes.find(s => s.id === uploadingShapeId);
                     if (shape && shape.type === 'image') {
-                        shape.imgData = ev.target.result;
-                        renderAll();
-                        saveToLocal();
+                        const img = new Image();
+                        img.onload = () => {
+                            // Match the height to the original aspect ratio relative to current width
+                            shape.h = snap(Math.max(20, img.height * (shape.w / img.width)));
+                            shape.imgData = ev.target.result;
+                            renderAll();
+                            commitState();
+                        };
+                        img.src = ev.target.result;
                     }
                     this.value = ''; 
                 };
@@ -605,6 +678,9 @@
                     renderAll();
                 } catch(e) {}
             }
+            
+            // Push initial state to history stack
+            commitState();
         }
 
         /* --- PALETTE RENDERING --- */
@@ -648,7 +724,7 @@
 
                 if (sObj) {
                     document.getElementById('sel-font').value = sObj.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
-                    document.getElementById('inp-size').value = sObj.fontSize || (state.selectedShapes.length > 0 ? 14 : 12);
+                    document.getElementById('inp-size').value = sObj.fontSize || 18;
                     
                     document.getElementById('btn-bold').classList.toggle('btn-format-active', sObj.fontWeight === 'bold');
                     document.getElementById('btn-italic').classList.toggle('btn-format-active', sObj.fontStyle === 'italic');
@@ -670,7 +746,7 @@
                 if(c) c[property] = value;
             });
             renderAll();
-            saveToLocal();
+            commitState();
         }
 
         function toggleFormat(property, trueValue, falseValue) {
@@ -716,7 +792,7 @@
                 textDiv.spellcheck = false;
                 textDiv.contentEditable = false; 
                 
-                textDiv.style.fontSize = `${shape.fontSize || 14}px`;
+                textDiv.style.fontSize = `${shape.fontSize || 18}px`;
                 textDiv.style.fontFamily = shape.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
                 textDiv.style.fontWeight = shape.fontWeight || 'normal';
                 textDiv.style.fontStyle = shape.fontStyle || 'normal';
@@ -743,7 +819,7 @@
 
                 textDiv.addEventListener('blur', e => {
                     node.classList.remove('editing'); textDiv.contentEditable = false; window.getSelection().removeAllRanges();
-                    shape.text = textDiv.innerHTML || SHAPE_DEFS[shape.type].defaultText; saveToLocal();
+                    shape.text = textDiv.innerHTML || SHAPE_DEFS[shape.type].defaultText; commitState();
                 });
 
                 node.appendChild(textDiv);
@@ -784,7 +860,7 @@
                             state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: shape.id, toPort: idx, text: '' });
                             activePort = null; isConnecting = false;
                             document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
-                            renderAll(); saveToLocal(); return;
+                            renderAll(); commitState(); return;
                         }
                     }
 
@@ -827,7 +903,7 @@
                     state.connections.push({ id: state.nextConnId++, fromId: activePort.shapeId, fromPort: activePort.portIndex, toId: shape.id, toPort: toPort, text: '' });
                     activePort = null; isConnecting = false;
                     document.body.classList.remove('is-connecting'); tempLine.style.display = 'none';
-                    renderAll(); saveToLocal(); return;
+                    renderAll(); commitState(); return;
                 }
 
                 const multi = e.ctrlKey || e.metaKey;
@@ -869,6 +945,13 @@
                 // Skip redrawing innerHTML for images during resize to prevent massive base64 processing lag (browser freeze)
                 if (shape.type !== 'image' && svg) {
                     svg.innerHTML = def.draw(shape.w, shape.h, shape);
+                } else if (shape.type === 'image' && svg) {
+                    // Efficiently update image size attributes directly without re-parsing base64
+                    const imgEl = svg.querySelector('image');
+                    if (imgEl) { imgEl.setAttribute('width', shape.w); imgEl.setAttribute('height', shape.h); }
+                    svg.querySelectorAll('rect').forEach(r => { r.setAttribute('width', shape.w); r.setAttribute('height', shape.h); });
+                    const txtEl = svg.querySelector('text');
+                    if (txtEl) { txtEl.setAttribute('x', shape.w / 2); txtEl.setAttribute('y', shape.h / 2); }
                 }
                 
                 const portDefs = def.ports(shape.w, shape.h);
@@ -899,7 +982,7 @@
                 label.innerText = isPlaceholder ? 'Add Label...' : (conn.text || '');
                 label.contentEditable = false;
 
-                label.style.fontSize = `${conn.fontSize || 12}px`;
+                label.style.fontSize = `${conn.fontSize || 18}px`;
                 label.style.fontFamily = conn.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
                 label.style.fontWeight = conn.fontWeight || 'normal';
                 label.style.fontStyle = conn.fontStyle || 'normal';
@@ -939,7 +1022,7 @@
 
                 label.addEventListener('blur', e => {
                     label.classList.remove('editing'); label.contentEditable = false; window.getSelection().removeAllRanges();
-                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); saveToLocal(); renderAll();
+                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); commitState(); renderAll();
                 });
 
                 htmlLayer.appendChild(label);
@@ -1108,8 +1191,17 @@
                 if (file.type.startsWith('image/')) {
                     const reader = new FileReader();
                     reader.onload = function(event) {
-                        const newShape = { id: state.nextShapeId++, type: 'image', x: snap(pos.x - 75), y: snap(pos.y - 75), w: 150, h: 150, text: '', imgData: event.target.result };
-                        state.shapes.push(newShape); selectShape(newShape.id); renderAll(); saveToLocal();
+                        const img = new Image();
+                        img.onload = () => {
+                            // Scale down large images to fit within a 150x150 box while maintaining aspect ratio
+                            const scaleImg = 150 / Math.max(img.width, img.height);
+                            const w = snap(Math.max(20, img.width * scaleImg));
+                            const h = snap(Math.max(20, img.height * scaleImg));
+                            
+                            const newShape = { id: state.nextShapeId++, type: 'image', x: snap(pos.x - w/2), y: snap(pos.y - h/2), w: w, h: h, text: '', imgData: event.target.result };
+                            state.shapes.push(newShape); selectShape(newShape.id); renderAll(); commitState();
+                        };
+                        img.src = event.target.result;
                     };
                     reader.readAsDataURL(file);
                 }
@@ -1127,20 +1219,81 @@
             if (document.activeElement.classList.contains('text-editor') || document.activeElement.classList.contains('conn-label')) {
                 return; 
             }
+
+            const clipboardData = e.clipboardData || window.clipboardData;
+            const textData = clipboardData.getData('text/plain');
+
+            let isInternalCopy = false;
+            try {
+                const parsed = JSON.parse(textData);
+                if (parsed && parsed.type === 'flowchart-io') {
+                    isInternalCopy = true;
+                    // Support cross-tab copy paste
+                    copiedShapes = parsed.shapes || [];
+                    copiedConnections = parsed.connections || [];
+                }
+            } catch(err) {}
+
+            if (isInternalCopy && (copiedShapes.length > 0 || copiedConnections.length > 0)) {
+                const offset = snapSize > 1 ? snapSize * 2 : 20;
+                let newSelectedShapes = [];
+                let newSelectedConns = [];
+                let idMap = {}; 
+                
+                copiedShapes.forEach(cs => {
+                    cs.x += offset;
+                    cs.y += offset;
+                    const newShape = JSON.parse(JSON.stringify(cs));
+                    newShape.id = state.nextShapeId++;
+                    idMap[cs.id] = newShape.id;
+                    newShape.x = snap(newShape.x);
+                    newShape.y = snap(newShape.y);
+                    state.shapes.push(newShape);
+                    newSelectedShapes.push(newShape.id);
+                });
+
+                copiedConnections.forEach(cc => {
+                    const newConn = JSON.parse(JSON.stringify(cc));
+                    newConn.id = state.nextConnId++;
+                    if (idMap[cc.fromId] && idMap[cc.toId]) {
+                        newConn.fromId = idMap[cc.fromId];
+                        newConn.toId = idMap[cc.toId];
+                        state.connections.push(newConn);
+                        newSelectedConns.push(newConn.id);
+                    }
+                });
+                
+                state.selectedShapes = newSelectedShapes;
+                state.selectedConnections = newSelectedConns;
+                commitState();
+                updateFormatToolbar();
+                renderAll();
+                e.preventDefault();
+                return;
+            }
             
-            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            const items = clipboardData.items;
             for (let index in items) {
                 const item = items[index];
                 if (item.kind === 'file' && item.type.startsWith('image/')) {
                     const blob = item.getAsFile();
                     const reader = new FileReader();
                     reader.onload = function(event) {
-                        const cx = canvasWrapper.scrollLeft + canvasWrapper.clientWidth / 2;
-                        const cy = canvasWrapper.scrollTop + canvasWrapper.clientHeight / 2;
-                        const targetX = cx / scale; const targetY = cy / scale;
-                        
-                        const newShape = { id: state.nextShapeId++, type: 'image', x: snap(targetX - 75), y: snap(targetY - 75), w: 150, h: 150, text: '', imgData: event.target.result };
-                        state.shapes.push(newShape); selectShape(newShape.id); renderAll(); saveToLocal();
+                        const img = new Image();
+                        img.onload = () => {
+                            const cx = canvasWrapper.scrollLeft + canvasWrapper.clientWidth / 2;
+                            const cy = canvasWrapper.scrollTop + canvasWrapper.clientHeight / 2;
+                            const targetX = cx / scale; const targetY = cy / scale;
+                            
+                            // Scale down large images to fit within a 150x150 box while maintaining aspect ratio
+                            const scaleImg = 150 / Math.max(img.width, img.height);
+                            const w = snap(Math.max(20, img.width * scaleImg));
+                            const h = snap(Math.max(20, img.height * scaleImg));
+                            
+                            const newShape = { id: state.nextShapeId++, type: 'image', x: snap(targetX - w/2), y: snap(targetY - h/2), w: w, h: h, text: '', imgData: event.target.result };
+                            state.shapes.push(newShape); selectShape(newShape.id); renderAll(); commitState();
+                        };
+                        img.src = event.target.result;
                     };
                     reader.readAsDataURL(blob);
                     e.preventDefault();
@@ -1197,9 +1350,24 @@
                 if(e.cancelable) e.preventDefault();
                 const shape = state.shapes.find(s => s.id === state.selectedShapes[0]); 
                 if(shape) {
-                    const dx = mouseCanvasPos.x - resizeStart.startX; const dy = mouseCanvasPos.y - resizeStart.startY;
-                    shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.w + dx));
-                    shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(resizeStart.h + dy));
+                    const dx = mouseCanvasPos.x - resizeStart.startX; 
+                    const dy = mouseCanvasPos.y - resizeStart.startY;
+                    
+                    let targetW = resizeStart.w + dx;
+                    let targetH = resizeStart.h + dy;
+
+                    // If holding Ctrl/Cmd, lock the aspect ratio
+                    if (e.ctrlKey || e.metaKey) {
+                        const scaleW = targetW / resizeStart.w;
+                        const scaleH = targetH / resizeStart.h;
+                        const finalScale = Math.max(scaleW, scaleH);
+                        targetW = resizeStart.w * finalScale;
+                        targetH = resizeStart.h * finalScale;
+                    }
+
+                    shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(targetW));
+                    shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(targetH));
+                    
                     updateShapeNode(shape); renderConnections();
                 }
             }
@@ -1239,7 +1407,7 @@
                 initialPinchDist = null;
             }
 
-            if (isResizing || isDraggingShape) saveToLocal();
+            if (isResizing || isDraggingShape) commitState();
             
             if (isConnecting) {
                 const clientX = e.clientX ?? (e.changedTouches ? e.changedTouches[0].clientX : 0);
@@ -1269,7 +1437,7 @@
                 if (connected) {
                     activePort = null; isConnecting = false;
                     document.body.classList.remove('is-connecting'); document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
-                    saveToLocal(); tempLine.style.display = 'none'; renderConnections();
+                    commitState(); tempLine.style.display = 'none'; renderConnections();
                 } else if (connectionDragMoved) {
                     activePort = null; isConnecting = false;
                     document.body.classList.remove('is-connecting'); document.querySelectorAll('.port').forEach(p => p.classList.remove('active-port'));
@@ -1290,7 +1458,7 @@
         function addShape(type, x, y, text) {
             const def = SHAPE_DEFS[type];
             const newShape = { id: state.nextShapeId++, type: type, x: snap(x), y: snap(y), w: snap(def.defaultW), h: snap(def.defaultH), text: text || def.defaultText };
-            state.shapes.push(newShape); selectShape(newShape.id); renderAll(); saveToLocal();
+            state.shapes.push(newShape); selectShape(newShape.id); renderAll(); commitState();
         }
 
         function selectShape(id, multi = false) {
@@ -1347,7 +1515,7 @@
                 state.selectedConnections = [];
             }
             updateFormatToolbar();
-            renderAll(); saveToLocal();
+            renderAll(); commitState();
         }
 
         function updateDeleteButton() {
@@ -1371,7 +1539,7 @@
         function closeClearModal() { document.getElementById('clear-modal').classList.add('hidden'); }
         function confirmClearCanvas() {
             state = { shapes: [], connections: [], nextShapeId: 1, nextConnId: 1, selectedShapes: [], selectedConnections: [] };
-            updateFormatToolbar(); renderAll(); saveToLocal(); closeClearModal();
+            updateFormatToolbar(); renderAll(); commitState(); closeClearModal();
         }
 
         function changeSnap(val) { 
@@ -1390,8 +1558,7 @@
             menu.classList.toggle('flex');
         }
 
-        /* --- DATA PERSISTENCE & EXPORT --- */
-        function saveToLocal() { localStorage.setItem('flowchartData', JSON.stringify(state)); }
+        /* --- EXPORT --- */
         function saveData() {
             const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state)); a.download = "flowchart.json";
             document.body.appendChild(a); a.click(); a.remove();
@@ -1406,7 +1573,7 @@
                     if(!state.selectedShapes) state.selectedShapes = state.selectedShape ? [state.selectedShape] : [];
                     if(!state.selectedConnections) state.selectedConnections = state.selectedConnection ? [state.selectedConnection] : [];
                     updateFormatToolbar();
-                    renderAll(); saveToLocal(); 
+                    renderAll(); commitState(); 
                 } 
                 catch (err) { alert('Invalid JSON file'); }
             };
@@ -1419,17 +1586,35 @@
             const prevSelConn = [...state.selectedConnections];
             state.selectedShapes = []; state.selectedConnections = []; renderAll();
 
-            if (state.shapes.length === 0) { 
+            if (state.shapes.length === 0 && state.connections.length === 0) { 
                 state.selectedShapes = prevSel; state.selectedConnections = prevSelConn; renderAll(); 
                 return; 
             }
             
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            // Process shapes bounds
             state.shapes.forEach(s => {
                 minX = Math.min(minX, s.x); minY = Math.min(minY, s.y);
                 maxX = Math.max(maxX, s.x + s.w); maxY = Math.max(maxY, s.y + s.h);
             });
-            const pad = 40; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+            
+            // Process connections bounds to prevent arrow cropping
+            state.connections.forEach(conn => {
+                const route = getOrthogonalPath(conn);
+                const pts = route.path.match(/-?\d+\.?\d*/g); // extract all coordinate values
+                if (pts) {
+                    for(let i=0; i<pts.length; i+=2) {
+                        minX = Math.min(minX, parseFloat(pts[i]));
+                        maxX = Math.max(maxX, parseFloat(pts[i]));
+                        minY = Math.min(minY, parseFloat(pts[i+1]));
+                        maxY = Math.max(maxY, parseFloat(pts[i+1]));
+                    }
+                }
+            });
+
+            // Generous padding to include connection labels and overhangs
+            const pad = 80; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
             let svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxX-minX}" height="${maxY-minY}" viewBox="${minX} ${minY} ${maxX-minX} ${maxY-minY}">`;
             svgStr += document.getElementById('svg-defs').outerHTML;
@@ -1444,7 +1629,7 @@
                     const fs = conn.fontStyle || 'normal';
                     const td = conn.textDecoration || 'none';
                     const ff = conn.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
-                    const fsz = conn.fontSize || 12;
+                    const fsz = conn.fontSize || 18;
                     svgStr += `<text x="${route.midX}" y="${route.midY}" dominant-baseline="central" text-anchor="middle" font-family="${ff}" font-size="${fsz}" font-weight="${fw}" font-style="${fs}" text-decoration="${td}" fill="#1e293b" paint-order="stroke" stroke="white" stroke-width="4">${conn.text.replace(/<[^>]*>?/gm, '')}</text>`;
                 }
             });
@@ -1457,7 +1642,7 @@
                     const fs = s.fontStyle || 'normal';
                     const td = s.textDecoration || 'none';
                     const ff = s.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
-                    const fsz = s.fontSize || 14;
+                    const fsz = s.fontSize || 18;
                     svgStr += `<text x="${s.w/2}" y="${s.h/2}" dominant-baseline="central" text-anchor="middle" font-family="${ff}" font-size="${fsz}" font-weight="${fw}" font-style="${fs}" text-decoration="${td}" fill="#1e293b">${s.text.replace(/<[^>]*>?/gm, '')}</text>`;
                 }
                 svgStr += `</g>`;
@@ -1482,11 +1667,25 @@
         }
 
         function copyPNG() {
-            getCanvasBlob(pngBlob => {
-                try {
-                    navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]).then(() => alert('Copied to clipboard!')).catch(err => alert('Clipboard blocked. Please use Export PNG instead.'));
-                } catch (e) { alert('Clipboard copy failed. Please use Export PNG instead.'); }
-            });
+            if (!navigator.clipboard || !window.ClipboardItem) {
+                alert('Clipboard API not supported. Please use Export PNG instead.');
+                return;
+            }
+            try {
+                const blobPromise = new Promise(resolve => {
+                    getCanvasBlob(blob => resolve(blob));
+                });
+                const item = new ClipboardItem({ 'image/png': blobPromise });
+                navigator.clipboard.write([item])
+                    .then(() => alert('Copied to clipboard!'))
+                    .catch(err => {
+                        console.error(err);
+                        alert('Clipboard write blocked by browser. Please use Export PNG instead.');
+                    });
+            } catch (e) { 
+                console.error(e);
+                alert('Clipboard copy failed. Please use Export PNG instead.'); 
+            }
         }
 
         init();
