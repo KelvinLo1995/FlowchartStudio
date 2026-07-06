@@ -103,7 +103,7 @@
 
         #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
         .connection-line { fill: none; pointer-events: auto; cursor: pointer; transition: filter 0.2s; }
-        .connection-line:hover, .connection-line.selected { filter: drop-shadow(0px 0px 4px rgba(59,130,246,0.4)); }
+        .connection-line:hover, .connection-line.hovered, .connection-line.selected { filter: drop-shadow(0px 0px 4px rgba(59,130,246,0.4)); }
 
         @media (max-width: 768px) {
             #sidebar { display: none; }
@@ -557,10 +557,48 @@
             };
         }
 
+        /* --- CACHING LOGIC --- */
+        function getPathForConnection(conn) {
+            if (conn.cachedPath) {
+                return { path: conn.cachedPath, midX: conn.cachedMidX, midY: conn.cachedMidY, points: conn.cachedPoints };
+            }
+            const route = conn.routing === 'manual' ? getManualPath(conn) : getOrthogonalPath(conn);
+            conn.cachedPath = route.path;
+            conn.cachedMidX = route.midX;
+            conn.cachedMidY = route.midY;
+            conn.cachedPoints = route.points;
+            return route;
+        }
+
+        function invalidateConnectionCache(shapeId) {
+            if (shapeId !== undefined) {
+                state.connections.forEach(c => {
+                    if (c.fromId === shapeId || c.toId === shapeId) {
+                        c.cachedPath = null;
+                        c.cachedPoints = null;
+                    }
+                });
+            } else {
+                state.connections.forEach(c => {
+                    c.cachedPath = null;
+                    c.cachedPoints = null;
+                });
+            }
+        }
+
         /* --- DATA PERSISTENCE & HISTORY --- */
         function commitState() {
             if (isUndoing) return;
-            const stateStr = JSON.stringify(state);
+            
+            // Strip caches before saving to prevent blowing up localStorage space
+            const stateToSave = JSON.parse(JSON.stringify(state));
+            stateToSave.connections.forEach(c => {
+                delete c.cachedPath;
+                delete c.cachedMidX;
+                delete c.cachedMidY;
+                delete c.cachedPoints;
+            });
+            const stateStr = JSON.stringify(stateToSave);
             
             if (historyIndex >= 0 && history[historyIndex] === stateStr) {
                 return;
@@ -700,9 +738,16 @@
                                 shape.x = snap(shape.x + dx);
                                 shape.y = snap(shape.y + dy);
                                 updateShapeNode(shape);
+                                invalidateConnectionCache(shape.id);
                             }
                         });
-                        renderConnections();
+                        state.connections.forEach(conn => {
+                            if (state.selectedShapes.includes(conn.fromId) || state.selectedShapes.includes(conn.toId)) {
+                                conn.routing = 'auto';
+                                conn.waypoints = [];
+                                createOrUpdateConnectionDOM(conn);
+                            }
+                        });
                         commitState();
                     }
                 }
@@ -738,6 +783,8 @@
                         if(c.text === undefined) c.text = ''; 
                         if(c.routing === undefined) c.routing = 'auto';
                         if(c.labelRatio === undefined) c.labelRatio = 0.5;
+                        c.cachedPath = null;
+                        c.cachedPoints = null;
                     });
                     if(!state.selectedShapes) state.selectedShapes = state.selectedShape ? [state.selectedShape] : [];
                     if(!state.selectedConnections) state.selectedConnections = state.selectedConnection ? [state.selectedConnection] : [];
@@ -755,7 +802,9 @@
                 conn.routing = 'auto';
                 conn.waypoints = [];
                 conn.labelRatio = 0.5;
-                renderConnections();
+                conn.cachedPath = null;
+                conn.cachedPoints = null;
+                createOrUpdateConnectionDOM(conn);
                 commitState();
             }
         };
@@ -836,7 +885,10 @@
             });
             state.selectedConnections.forEach(id => {
                 const c = state.connections.find(c => c.id === id);
-                if(c) c[property] = value;
+                if(c) {
+                    c[property] = value;
+                    if (property.includes('stroke')) c.cachedPath = null; // Bust cache for dynamic stroke marker rendering
+                }
             });
             renderAll();
             commitState();
@@ -860,8 +912,9 @@
         /* --- RENDERING ENGINE --- */
         function renderAll() {
             htmlLayer.innerHTML = '';
-            renderConnections(); 
+            connectionsGroup.innerHTML = ''; // Full redraw
             state.shapes.forEach(shape => renderShapeNode(shape)); 
+            renderConnections(); 
             updateDeleteButton();
         }
 
@@ -1054,91 +1107,91 @@
             }
         }
 
+        function enterEditMode(label, conn, e) {
+            e.stopPropagation();
+            if (label.classList.contains('editing')) return;
+            if (label.classList.contains('is-placeholder')) { label.innerText = ''; label.classList.remove('is-placeholder'); }
+            label.classList.add('editing'); label.contentEditable = true; label.focus();
+            const range = document.createRange(); range.selectNodeContents(label);
+            const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        }
+
         function renderConnections() {
+            // Only clean up labels and segment handles here, full redraw cleans connectionsGroup
             document.querySelectorAll('.conn-label, .segment-handle').forEach(el => el.remove());
+            connectionsGroup.innerHTML = '';
             
-            let svgStr = '';
             state.connections.forEach(conn => {
-                const route = conn.routing === 'manual' ? getManualPath(conn) : getOrthogonalPath(conn);
-                const isSel = state.selectedConnections.includes(conn.id);
-                const stroke = conn.stroke || '#64748b';
-                const strokeWidth = conn.strokeWidth || 2;
-                const strokeDash = conn.strokeStyle === 'dashed' ? '8,8' : (conn.strokeStyle === 'dotted' ? '2,4' : 'none');
-                const textColor = conn.textColor || '#1e293b'; 
+                createOrUpdateConnectionDOM(conn);
+            });
+        }
+
+        function createOrUpdateConnectionDOM(conn) {
+            const route = getPathForConnection(conn);
+            const isSel = state.selectedConnections.includes(conn.id);
+            const stroke = conn.stroke || '#64748b';
+            const strokeWidth = conn.strokeWidth || 2;
+            const strokeDash = conn.strokeStyle === 'dashed' ? '8,8' : (conn.strokeStyle === 'dotted' ? '2,4' : 'none');
+            const textColor = conn.textColor || '#1e293b'; 
+            
+            let markerId = `arrow-${stroke.replace('#', '')}`;
+            if (!document.getElementById(markerId)) {
+                document.getElementById('svg-defs').insertAdjacentHTML('beforeend',
+                    `<marker id="${markerId}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="${stroke}" /></marker>`
+                );
+            }
+
+            // Create invisible thick hitbox for much easier clicking
+            let hitboxEl = document.getElementById(`conn-hitbox-${conn.id}`);
+            if (!hitboxEl) {
+                hitboxEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                hitboxEl.id = `conn-hitbox-${conn.id}`;
+                hitboxEl.onclick = (e) => selectConnection(conn.id, e);
+                hitboxEl.ondblclick = (e) => resetConnectionRouting(conn.id, e);
+                hitboxEl.setAttribute('stroke', 'transparent');
+                hitboxEl.setAttribute('stroke-width', '25'); // Massive 25px grab area
+                hitboxEl.setAttribute('fill', 'none');
+                hitboxEl.style.cursor = 'pointer';
+                hitboxEl.style.pointerEvents = 'stroke';
                 
-                let markerId = `arrow-${stroke.replace('#', '')}`;
-                if (!document.getElementById(markerId)) {
-                    document.getElementById('svg-defs').insertAdjacentHTML('beforeend',
-                        `<marker id="${markerId}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="${stroke}" /></marker>`
-                    );
-                }
-
-                svgStr += `<path d="${route.path}" class="connection-line ${isSel ? 'selected' : ''}" 
-                                 onclick="selectConnection(${conn.id}, event)"
-                                 ondblclick="resetConnectionRouting(${conn.id}, event)"
-                                 stroke="${stroke}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDash}"
-                                 marker-end="url(#${markerId})"></path>`;
-                
-                // Segment Handles Rendering (Draggable orthogonal segments)
-                if (isSel && route.points && route.points.length > 1) {
-                    route.points.forEach((pt, idx) => {
-                        if (idx >= route.points.length - 1) return;
-                        
-                        // Disable dragging the exact segment touching the ports to avoid confusing slanting
-                        if (idx === 0 || idx === route.points.length - 2) return;
-
-                        const nextPt = route.points[idx + 1];
-                        const mx = (pt.x + nextPt.x) / 2, my = (pt.y + nextPt.y) / 2;
-                        const isHoriz = Math.abs(pt.y - nextPt.y) < 1;
-                        
-                        const segEl = document.createElement('div');
-                        segEl.className = 'segment-handle';
-                        segEl.style.left = `${mx}px`; segEl.style.top = `${my}px`;
-                        segEl.style.cursor = isHoriz ? 'row-resize' : 'col-resize';
-                        
-                        const startSegDrag = (e) => {
-                            e.stopPropagation(); if(e.cancelable) e.preventDefault();
-                            if (conn.routing !== 'manual') {
-                                conn.routing = 'manual';
-                                conn.waypoints = route.points.slice(1, -1);
-                            }
-                            
-                            isDraggingSegment = { connId: conn.id, wp1Idx: idx - 1, wp2Idx: idx, isHoriz };
-                        };
-                        
-                        segEl.addEventListener('mousedown', startSegDrag);
-                        segEl.addEventListener('touchstart', startSegDrag, {passive:false});
-                        htmlLayer.appendChild(segEl);
-                    });
-                }
-
-                // Label Rendering
-                const label = document.createElement('div');
-                const isPlaceholder = !conn.text && isSel;
-                const ratio = conn.labelRatio !== undefined ? conn.labelRatio : 0.5;
-                const labPos = getPointOnPath(route.points, ratio);
-
-                label.className = `conn-label ${isSel ? 'selected' : ''} ${!conn.text && !isSel ? 'empty' : ''} ${isPlaceholder ? 'is-placeholder' : ''}`;
-                label.style.left = `${labPos.x}px`; label.style.top = `${labPos.y}px`;
-                label.innerText = isPlaceholder ? 'Add Label...' : (conn.text || '');
-                label.contentEditable = false;
-
-                label.style.fontSize = `${conn.fontSize || 18}px`;
-                label.style.fontFamily = conn.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
-                label.style.fontWeight = conn.fontWeight || 'normal';
-                label.style.fontStyle = conn.fontStyle || 'normal';
-                label.style.textDecoration = conn.textDecoration || 'none';
-                label.style.color = textColor;
-
-                const enterEditMode = (e) => {
-                    e.stopPropagation();
-                    if (label.classList.contains('editing')) return;
-                    if (label.classList.contains('is-placeholder')) { label.innerText = ''; label.classList.remove('is-placeholder'); }
-                    label.classList.add('editing'); label.contentEditable = true; label.focus();
-                    const range = document.createRange(); range.selectNodeContents(label);
-                    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+                hitboxEl.onmouseenter = () => {
+                    const pel = document.getElementById(`conn-path-${conn.id}`);
+                    if (pel) pel.classList.add('hovered');
+                };
+                hitboxEl.onmouseleave = () => {
+                    const pel = document.getElementById(`conn-path-${conn.id}`);
+                    if (pel) pel.classList.remove('hovered');
                 };
 
+                connectionsGroup.appendChild(hitboxEl);
+            }
+            hitboxEl.setAttribute('d', route.path);
+
+            let pathEl = document.getElementById(`conn-path-${conn.id}`);
+            if (!pathEl) {
+                pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                pathEl.id = `conn-path-${conn.id}`;
+                pathEl.onclick = (e) => selectConnection(conn.id, e);
+                pathEl.ondblclick = (e) => resetConnectionRouting(conn.id, e);
+                connectionsGroup.appendChild(pathEl);
+            }
+            pathEl.setAttribute('d', route.path);
+            pathEl.setAttribute('class', `connection-line ${isSel ? 'selected' : ''}`);
+            pathEl.setAttribute('stroke', stroke);
+            pathEl.setAttribute('stroke-width', strokeWidth);
+            pathEl.setAttribute('stroke-dasharray', strokeDash);
+            pathEl.setAttribute('marker-end', `url(#${markerId})`);
+
+            let label = document.getElementById(`conn-label-${conn.id}`);
+            const isPlaceholder = !conn.text && isSel;
+            const ratio = conn.labelRatio !== undefined ? conn.labelRatio : 0.5;
+            const labPos = getPointOnPath(route.points, ratio);
+
+            if (!label) {
+                label = document.createElement('div');
+                label.id = `conn-label-${conn.id}`;
+                htmlLayer.appendChild(label);
+                
                 label.addEventListener('mousedown', e => { 
                     e.stopPropagation(); 
                     selectConnection(conn.id, e); 
@@ -1151,9 +1204,9 @@
                 label.addEventListener('click', e => { 
                     e.stopPropagation(); 
                     const multi = e.ctrlKey || e.metaKey;
-                    if (label.classList.contains('is-placeholder') && !multi) enterEditMode(e); 
+                    if (label.classList.contains('is-placeholder') && !multi) enterEditMode(label, conn, e); 
                 });
-                label.addEventListener('dblclick', e => { e.stopPropagation(); enterEditMode(e); });
+                label.addEventListener('dblclick', e => { e.stopPropagation(); enterEditMode(label, conn, e); });
                 
                 let lastTap = 0;
                 label.addEventListener('touchstart', (e) => {
@@ -1161,10 +1214,10 @@
                     selectConnection(conn.id, e);
                     const currentTime = new Date().getTime();
                     if (label.classList.contains('is-placeholder')) {
-                        if (!label.classList.contains('editing')) enterEditMode(e);
+                        if (!label.classList.contains('editing')) enterEditMode(label, conn, e);
                         if (e.cancelable) e.preventDefault();
                     } else if (currentTime - lastTap < 500 && currentTime - lastTap > 0) {
-                        if (!label.classList.contains('editing')) enterEditMode(e);
+                        if (!label.classList.contains('editing')) enterEditMode(label, conn, e);
                         if (e.cancelable) e.preventDefault();
                     } else if (!label.classList.contains('editing')) {
                         if(e.cancelable) e.preventDefault();
@@ -1175,12 +1228,56 @@
 
                 label.addEventListener('blur', e => {
                     label.classList.remove('editing'); label.contentEditable = false; window.getSelection().removeAllRanges();
-                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); commitState(); renderAll();
+                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); commitState(); 
+                    createOrUpdateConnectionDOM(conn); 
                 });
+            }
 
-                htmlLayer.appendChild(label);
-            });
-            connectionsGroup.innerHTML = svgStr;
+            label.className = `conn-label ${isSel ? 'selected' : ''} ${!conn.text && !isSel ? 'empty' : ''} ${isPlaceholder ? 'is-placeholder' : ''}`;
+            label.style.left = `${labPos.x}px`; label.style.top = `${labPos.y}px`;
+            if (!label.classList.contains('editing')) {
+                label.innerText = isPlaceholder ? 'Add Label...' : (conn.text || '');
+            }
+
+            label.style.fontSize = `${conn.fontSize || 18}px`;
+            label.style.fontFamily = conn.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
+            label.style.fontWeight = conn.fontWeight || 'normal';
+            label.style.fontStyle = conn.fontStyle || 'normal';
+            label.style.textDecoration = conn.textDecoration || 'none';
+            label.style.color = textColor;
+
+            // Target cleanup and re-render of segment handles
+            document.querySelectorAll(`.segment-handle[data-conn-id="${conn.id}"]`).forEach(el => el.remove());
+            
+            if (isSel && route.points && route.points.length > 1) {
+                route.points.forEach((pt, idx) => {
+                    if (idx >= route.points.length - 1) return;
+                    if (idx === 0 || idx === route.points.length - 2) return;
+
+                    const nextPt = route.points[idx + 1];
+                    const mx = (pt.x + nextPt.x) / 2, my = (pt.y + nextPt.y) / 2;
+                    const isHoriz = Math.abs(pt.y - nextPt.y) < 1;
+                    
+                    const segEl = document.createElement('div');
+                    segEl.className = 'segment-handle';
+                    segEl.dataset.connId = conn.id;
+                    segEl.style.left = `${mx}px`; segEl.style.top = `${my}px`;
+                    segEl.style.cursor = isHoriz ? 'row-resize' : 'col-resize';
+                    
+                    const startSegDrag = (e) => {
+                        e.stopPropagation(); if(e.cancelable) e.preventDefault();
+                        if (conn.routing !== 'manual') {
+                            conn.routing = 'manual';
+                            conn.waypoints = route.points.slice(1, -1);
+                        }
+                        isDraggingSegment = { connId: conn.id, wp1Idx: idx - 1, wp2Idx: idx, isHoriz };
+                    };
+                    
+                    segEl.addEventListener('mousedown', startSegDrag);
+                    segEl.addEventListener('touchstart', startSegDrag, {passive:false});
+                    htmlLayer.appendChild(segEl);
+                });
+            }
         }
 
         /* --- ROUTING & MATH LOGIC --- */
@@ -1565,16 +1662,17 @@
                         if (wp1) wp1.x = newX; 
                         if (wp2) wp2.x = newX;
                     }
-                    renderConnections();
+                    conn.cachedPath = null;
+                    createOrUpdateConnectionDOM(conn);
                 }
             }
             else if (isDraggingLabel) {
                 if(e.cancelable) e.preventDefault();
                 const conn = state.connections.find(c => c.id === isDraggingLabel.connId);
                 if (conn) {
-                    const route = conn.routing === 'manual' ? getManualPath(conn) : getOrthogonalPath(conn);
+                    const route = getPathForConnection(conn);
                     conn.labelRatio = getClosestRatioOnPath(route.points, mouseCanvasPos.x, mouseCanvasPos.y);
-                    renderConnections();
+                    createOrUpdateConnectionDOM(conn);
                 }
             }
             else if (isResizing && state.selectedShapes.length > 0) {
@@ -1599,7 +1697,13 @@
                     shape.w = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(targetW));
                     shape.h = Math.max(snapSize > 1 ? snapSize * 2 : 40, snap(targetH));
                     
-                    updateShapeNode(shape); renderConnections();
+                    updateShapeNode(shape);
+                    invalidateConnectionCache(shape.id);
+                    state.connections.forEach(conn => {
+                        if (conn.fromId === shape.id || conn.toId === shape.id) {
+                            createOrUpdateConnectionDOM(conn);
+                        }
+                    });
                 }
             }
             else if (isDraggingShape && state.selectedShapes.length > 0) {
@@ -1613,18 +1717,18 @@
                         shape.x = snap(shape._startX + dx);
                         shape.y = snap(shape._startY + dy);
                         updateShapeNode(shape);
+                        invalidateConnectionCache(shape.id);
                     }
                 });
 
-                // Reset connected arrows to auto-routing to maintain orthogonal lines
+                // Dynamically update only attached connections without a full DOM wipe
                 state.connections.forEach(conn => {
                     if (state.selectedShapes.includes(conn.fromId) || state.selectedShapes.includes(conn.toId)) {
                         conn.routing = 'auto';
                         conn.waypoints = [];
+                        createOrUpdateConnectionDOM(conn);
                     }
                 });
-
-                renderConnections();
             } 
             else if (isConnecting && activePort) {
                 if(e.cancelable) e.preventDefault();
@@ -1816,6 +1920,8 @@
                         if(c.text === undefined) c.text = ''; 
                         if(c.routing === undefined) c.routing = 'auto';
                         if(c.labelRatio === undefined) c.labelRatio = 0.5;
+                        c.cachedPath = null;
+                        c.cachedPoints = null;
                     }); 
                     if(!state.selectedShapes) state.selectedShapes = state.selectedShape ? [state.selectedShape] : [];
                     if(!state.selectedConnections) state.selectedConnections = state.selectedConnection ? [state.selectedConnection] : [];
@@ -1846,18 +1952,17 @@
             });
             
             state.connections.forEach(conn => {
-                const route = conn.routing === 'manual' ? getManualPath(conn) : getOrthogonalPath(conn);
-                const pts = route.path.match(/-?\d+\.?\d*/g); 
+                const route = getPathForConnection(conn);
+                const pts = route.points; 
                 if (pts) {
-                    for(let i=0; i<pts.length; i+=2) {
-                        minX = Math.min(minX, parseFloat(pts[i]));
-                        maxX = Math.max(maxX, parseFloat(pts[i]));
-                        minY = Math.min(minY, parseFloat(pts[i+1]));
-                        maxY = Math.max(maxY, parseFloat(pts[i+1]));
+                    for(let i=0; i<pts.length; i++) {
+                        minX = Math.min(minX, pts[i].x);
+                        maxX = Math.max(maxX, pts[i].x);
+                        minY = Math.min(minY, pts[i].y);
+                        maxY = Math.max(maxY, pts[i].y);
                     }
                 }
                 
-                // Consider manual labels bounds
                 if (conn.text) {
                     const ratio = conn.labelRatio !== undefined ? conn.labelRatio : 0.5;
                     const labPos = getPointOnPath(route.points, ratio);
@@ -1874,7 +1979,7 @@
             
             svgStr += `<g>`;
             state.connections.forEach(conn => {
-                const route = conn.routing === 'manual' ? getManualPath(conn) : getOrthogonalPath(conn);
+                const route = getPathForConnection(conn);
                 const stroke = conn.stroke || '#64748b';
                 const strokeWidth = conn.strokeWidth || 2;
                 const strokeDash = conn.strokeStyle === 'dashed' ? '8,8' : (conn.strokeStyle === 'dotted' ? '2,4' : 'none');
