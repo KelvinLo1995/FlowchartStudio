@@ -1973,6 +1973,34 @@
 
             const pad = 80; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
+            // HELPER: Convert HTML text (with line breaks) to properly spaced SVG tspan lines
+            const buildSvgText = (htmlText, x, y, fontSize, color, fw, fs, td, ff, isLabel) => {
+                if (!htmlText) return '';
+                
+                let str = htmlText.replace(/<br\s*[\/]?>/gi, '\n').replace(/<\/div>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '');
+                const txt = document.createElement('textarea'); txt.innerHTML = str; str = txt.value;
+                
+                let lines = str.split('\n').map(l => l.trim());
+                while(lines.length > 0 && lines[0] === '') lines.shift();
+                while(lines.length > 0 && lines[lines.length-1] === '') lines.pop();
+                
+                if (lines.length === 0) return '';
+                
+                const lineHeight = fontSize * 1.2;
+                const startY = y - ((lines.length - 1) * lineHeight) / 2;
+                
+                let tspans = '';
+                lines.forEach((line, i) => {
+                    const dy = i === 0 ? 0 : lineHeight;
+                    // Provide a zero-width space for empty lines so they don't collapse
+                    const escapedLine = line ? line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '&#8203;';
+                    tspans += `<tspan x="${x}" dy="${dy}">${escapedLine}</tspan>`;
+                });
+                
+                const paintOrder = isLabel ? `paint-order="stroke" stroke="white" stroke-width="4"` : '';
+                return `<text x="${x}" y="${startY}" dominant-baseline="central" text-anchor="middle" font-family="${ff}" font-size="${fontSize}" font-weight="${fw}" font-style="${fs}" text-decoration="${td}" fill="${color}" ${paintOrder}>${tspans}</text>`;
+            };
+
             let svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxX-minX}" height="${maxY-minY}" viewBox="${minX} ${minY} ${maxX-minX} ${maxY-minY}">`;
             svgStr += document.getElementById('svg-defs').outerHTML;
             svgStr += `<rect x="${minX}" y="${minY}" width="${maxX-minX}" height="${maxY-minY}" fill="${document.getElementById('bg-select').value === 'blank' ? 'white' : '#f8fafc'}" />`;
@@ -2000,7 +2028,8 @@
                     const fsz = conn.fontSize || 18;
                     const ratio = conn.labelRatio !== undefined ? conn.labelRatio : 0.5;
                     const labPos = getPointOnPath(route.points, ratio);
-                    svgStr += `<text x="${labPos.x}" y="${labPos.y}" dominant-baseline="central" text-anchor="middle" font-family="${ff}" font-size="${fsz}" font-weight="${fw}" font-style="${fs}" text-decoration="${td}" fill="${textColor}" paint-order="stroke" stroke="white" stroke-width="4">${conn.text.replace(/<[^>]*>?/gm, '')}</text>`;
+                    
+                    svgStr += buildSvgText(conn.text, labPos.x, labPos.y, fsz, textColor, fw, fs, td, ff, true);
                 }
             });
             svgStr += `</g>`;
@@ -2014,7 +2043,8 @@
                     const ff = s.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
                     const fsz = s.fontSize || 18;
                     const color = s.textColor || '#1e293b';
-                    svgStr += `<text x="${s.w/2}" y="${s.h/2}" dominant-baseline="central" text-anchor="middle" font-family="${ff}" font-size="${fsz}" font-weight="${fw}" font-style="${fs}" text-decoration="${td}" fill="${color}">${s.text.replace(/<[^>]*>?/gm, '')}</text>`;
+                    
+                    svgStr += buildSvgText(s.text, s.w/2, s.h/2, fsz, color, fw, fs, td, ff, false);
                 }
                 svgStr += `</g>`;
             });
