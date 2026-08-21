@@ -1349,41 +1349,91 @@
             label.style.textDecoration = conn.textDecoration || 'none';
             label.style.color = textColor;
 
-            // 清理與重新渲染線段手柄
-            document.querySelectorAll(`.segment-handle[data-conn-id="${conn.id}"]`).forEach(el => el.remove());
-            
-            if (isSel && route.points && route.points.length > 1) {
-                route.points.forEach((pt, idx) => {
-                    if (idx >= route.points.length - 1) return;
-                    if (idx === 0 || idx === route.points.length - 2) return;
+            // Target cleanup and re-render of segment handles ONLY if not actively dragging
+            // This prevents the browser from dropping the drag/touch event sequence when DOM nodes swap!
+            if (!isDraggingSegment) {
+                document.querySelectorAll(`.segment-handle[data-conn-id="${conn.id}"]`).forEach(el => el.remove());
+                
+                if (isSel && route.points && route.points.length > 1) {
+                    route.points.forEach((pt, idx) => {
+                        if (idx >= route.points.length - 1) return;
+                        if (idx === 0 || idx === route.points.length - 2) return;
 
-                    const nextPt = route.points[idx + 1];
-                    const mx = (pt.x + nextPt.x) / 2, my = (pt.y + nextPt.y) / 2;
-                    const isHoriz = Math.abs(pt.y - nextPt.y) < 1;
-                    
-                    const segEl = document.createElement('div');
-                    segEl.className = 'segment-handle';
-                    segEl.dataset.connId = conn.id;
-                    segEl.style.left = `${mx}px`; segEl.style.top = `${my}px`;
-                    segEl.style.cursor = isHoriz ? 'row-resize' : 'col-resize';
-                    
-                    const startSegDrag = (e) => {
-                        e.stopPropagation(); if(e.cancelable) e.preventDefault();
-                        if (conn.routing !== 'manual') {
+                        const nextPt = route.points[idx + 1];
+                        const dx = nextPt.x - pt.x;
+                        const dy = nextPt.y - pt.y;
+                        const isHoriz = Math.abs(dy) < 0.5 && Math.abs(dx) >= 0.5;
+                        const isVert = Math.abs(dx) < 0.5 && Math.abs(dy) >= 0.5;
+
+                        // Both horizontal and vertical orthogonal segments are editable.
+                        // Ignore only diagonal or zero-length segments.
+                        if (!isHoriz && !isVert) return;
+
+                        const mx = (pt.x + nextPt.x) / 2, my = (pt.y + nextPt.y) / 2;
+                        
+                        const segEl = document.createElement('div');
+                        segEl.className = 'segment-handle';
+                        segEl.dataset.connId = conn.id;
+                        // Keep the route segment index so the existing handle can be moved
+                        // without replacing its DOM node during an active mouse/touch drag.
+                        segEl.dataset.segmentIdx = idx;
+                        segEl.style.left = `${mx}px`; segEl.style.top = `${my}px`;
+                        segEl.style.cursor = isHoriz ? 'row-resize' : 'col-resize';
+                        
+                        const startSegDrag = (e) => {
+                            e.stopPropagation(); if(e.cancelable) e.preventDefault();
                             conn.routing = 'manual';
-                            conn.waypoints = route.points.slice(1, -1);
-                        }
-                        isDraggingSegment = { connId: conn.id, wp1Idx: idx - 1, wp2Idx: idx, isHoriz };
-                    };
-                    
-                    segEl.addEventListener('mousedown', startSegDrag);
-                    segEl.addEventListener('touchstart', startSegDrag, {passive:false});
-                    htmlLayer.appendChild(segEl);
-                });
+                            conn.waypoints = JSON.parse(JSON.stringify(route.points.slice(1, -1)));
+                            isDraggingSegment = {
+                                connId: conn.id,
+                                wp1Idx: idx - 1,
+                                wp2Idx: idx,
+                                isHoriz,
+                                lastValidWaypoints: JSON.parse(JSON.stringify(conn.waypoints))
+                            };
+                        };
+                        
+                        segEl.addEventListener('mousedown', startSegDrag);
+                        segEl.addEventListener('touchstart', startSegDrag, {passive:false});
+                        htmlLayer.appendChild(segEl);
+                    });
+                }
             }
         }
 
-        /* --- 路由與數學運算邏輯 --- */
+        // Update the existing editing points in-place while an arrow segment is dragged.
+        // Recreating a handle during pointer movement would cancel the browser's active
+        // mouse/touch sequence, so createOrUpdateConnectionDOM intentionally keeps it alive.
+        function isOrthogonalRoute(points) {
+            if (!points || points.length < 2) return true;
+            for (let i = 0; i < points.length - 1; i++) {
+                const dx = Math.abs(points[i + 1].x - points[i].x);
+                const dy = Math.abs(points[i + 1].y - points[i].y);
+                if (dx > 0.5 && dy > 0.5) return false;
+            }
+            return true;
+        }
+
+        function updateSegmentHandlesLive(conn, route) {
+            if (!route || !route.points || route.points.length < 2) return;
+
+            document.querySelectorAll(`.segment-handle[data-conn-id="${conn.id}"]`).forEach(handle => {
+                const idx = Number(handle.dataset.segmentIdx);
+                if (!Number.isInteger(idx) || idx < 0 || idx >= route.points.length - 1) return;
+
+                const pt = route.points[idx];
+                const nextPt = route.points[idx + 1];
+                const mx = (pt.x + nextPt.x) / 2;
+                const my = (pt.y + nextPt.y) / 2;
+                const isHoriz = Math.abs(pt.y - nextPt.y) < 1;
+
+                handle.style.left = `${mx}px`;
+                handle.style.top = `${my}px`;
+                handle.style.cursor = isHoriz ? 'row-resize' : 'col-resize';
+            });
+        }
+
+        /* --- ROUTING & MATH LOGIC --- */
         function getClosestPort(shapeId, targetX, targetY) {
             const shape = state.shapes.find(s => s.id === shapeId);
             const def = SHAPE_DEFS[shape.type];
@@ -1494,64 +1544,30 @@
             const p1 = resolvePortDirection(rawP1, rawP2);
             const p2 = resolvePortDirection(rawP2, rawP1);
             
-            // Generate full orthogonal path through waypoints
             let pts = [{x: p1.x, y: p1.y}];
             
-            const STANDOFF = 25;
-            let current = {x: p1.x + p1.dx * STANDOFF, y: p1.y + p1.dy * STANDOFF};
-            pts.push(current);
-
             if (conn.waypoints && conn.waypoints.length > 0) {
-                for (let i = 0; i < conn.waypoints.length; i++) {
-                    const target = conn.waypoints[i];
-                    // Automatically inject an orthogonal corner if the next waypoint is diagonal
-                    if (current.x !== target.x && current.y !== target.y) {
-                        if (i === 0) {
-                            if (p1.dx !== 0) pts.push({x: target.x, y: current.y});
-                            else pts.push({x: current.x, y: target.y});
-                        } else {
-                            const prev = pts[pts.length - 1];
-                            const prev2 = pts.length > 1 ? pts[pts.length - 2] : null;
-                            if (prev2) {
-                                if (prev.x === prev2.x) pts.push({x: target.x, y: prev.y}); // came vertically, go horizontally
-                                else pts.push({x: prev.x, y: target.y}); // came horizontally, go vertically
-                            } else {
-                                pts.push({x: target.x, y: current.y});
-                            }
-                        }
-                    }
-                    pts.push(target);
-                    current = target;
-                }
-            }
-
-            const endStandoff = {x: p2.x + p2.dx * STANDOFF, y: p2.y + p2.dy * STANDOFF};
-            
-            // Connect last point to the end port stand-off orthogonally
-            if (current.x !== endStandoff.x && current.y !== endStandoff.y) {
-                if (p2.dx !== 0) pts.push({x: current.x, y: endStandoff.y});
-                else pts.push({x: endStandoff.x, y: current.y});
+                let wps = JSON.parse(JSON.stringify(conn.waypoints));
+                
+                // Strictly anchor the start/end orthogonal standoffs so dragging them doesn't break the right-angle exit!
+                if (p1.dx !== 0) wps[0].y = p1.y;
+                if (p1.dy !== 0) wps[0].x = p1.x;
+                if (p2.dx !== 0) wps[wps.length - 1].y = p2.y;
+                if (p2.dy !== 0) wps[wps.length - 1].x = p2.x;
+                
+                pts.push(...wps);
+            } else {
+                const STANDOFF = 25;
+                pts.push({x: p1.x + p1.dx * STANDOFF, y: p1.y + p1.dy * STANDOFF});
+                pts.push({x: p2.x + p2.dx * STANDOFF, y: p2.y + p2.dy * STANDOFF});
             }
             
-            pts.push(endStandoff);
             pts.push({x: p2.x, y: p2.y});
             
-            // Clean up straight lines (remove useless intermediate points on the same axis)
-            let cleanPts = [pts[0]];
-            for (let i = 1; i < pts.length - 1; i++) {
-                const prev = cleanPts[cleanPts.length - 1];
-                const cur = pts[i];
-                const next = pts[i + 1];
-                if ((prev.x === cur.x && cur.x === next.x) || (prev.y === cur.y && cur.y === next.y)) continue;
-                if (prev.x === cur.x && prev.y === cur.y) continue;
-                cleanPts.push(cur);
-            }
-            cleanPts.push(pts[pts.length - 1]);
-
-            let d = `M ${cleanPts[0].x} ${cleanPts[0].y} `;
-            for(let i=1; i<cleanPts.length; i++) d += `L ${cleanPts[i].x} ${cleanPts[i].y} `;
-            const mid = getMidPoint(cleanPts);
-            return { path: d, midX: mid.x, midY: mid.y, points: cleanPts };
+            let d = `M ${pts[0].x} ${pts[0].y} `;
+            for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
+            const mid = getMidPoint(pts);
+            return { path: d, midX: mid.x, midY: mid.y, points: pts };
         }
 
         function getOrthogonalPath(conn) {
@@ -1630,10 +1646,7 @@
 
             if (!found) return calculateSimpleRoute(p1, p2);
 
-            let pts = [{x: p1.x, y: p1.y}];
-            // Force pure orthogonal step away from corner ports so it never diagonally skips
-            if (p1.dx !== 0 && p1.dy !== 0) pts.push({x: p1.x, y: start.y});
-            pts.push(start);
+            let pts = [{x: p1.x, y: p1.y}, start];
             
             for (let i = 1; i < found.length - 1; i++) {
                 const prev = found[i-1], cur = found[i], nxt = found[i+1];
@@ -1642,9 +1655,7 @@
             if (found.length > 1) pts.push({x: xArr[found[found.length - 1].x], y: yArr[found[found.length - 1].y]});
             else pts.push({x: xArr[ex], y: yArr[ey]});
             
-            // Force pure orthogonal step into end corner port
-            if (p2.dx !== 0 && p2.dy !== 0) pts.push({x: p2.x, y: end.y});
-            pts.push({x: p2.x, y: p2.y});
+            pts.push(end, {x: p2.x, y: p2.y});
             
             let d = `M ${pts[0].x} ${pts[0].y} `;
             for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
@@ -1657,12 +1668,9 @@
             const start = { x: p1.x + p1.dx * margin, y: p1.y + p1.dy * margin };
             const end = { x: p2.x + p2.dx * margin, y: p2.y + p2.dy * margin };
             
-            let pts = [{x: p1.x, y: p1.y}];
-            if (p1.dx !== 0 && p1.dy !== 0) pts.push({x: p1.x, y: start.y});
-            pts.push(start);
+            let pts = [{x: p1.x, y: p1.y}, start];
             
             let p1Axis = p1.dx !== 0 ? 'x' : 'y';
-            if (p1.dx !== 0 && p1.dy !== 0) p1Axis = 'x'; // Left start horizontally
             
             let mid1, mid2;
             if (p1Axis === 'x') {
@@ -1674,9 +1682,7 @@
             }
             pts.push(mid1, mid2);
             
-            pts.push(end);
-            if (p2.dx !== 0 && p2.dy !== 0) pts.push({x: p2.x, y: end.y});
-            pts.push({x: p2.x, y: p2.y});
+            pts.push(end, {x: p2.x, y: p2.y});
             
             let d = `M ${pts[0].x} ${pts[0].y} `;
             for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
@@ -1865,7 +1871,22 @@
                         if (wp2) wp2.x = newX;
                     }
                     conn.cachedPath = null;
+                    let updatedRoute = getPathForConnection(conn);
+
+                    // Hard safety guard: manual editing must never introduce a diagonal.
+                    // If an unexpected geometry case appears, restore the last valid route.
+                    if (!isOrthogonalRoute(updatedRoute.points)) {
+                        conn.waypoints = JSON.parse(JSON.stringify(isDraggingSegment.lastValidWaypoints));
+                        conn.cachedPath = null;
+                        conn.cachedPoints = null;
+                        updatedRoute = getPathForConnection(conn);
+                    } else {
+                        isDraggingSegment.lastValidWaypoints = JSON.parse(JSON.stringify(conn.waypoints));
+                    }
+
                     createOrUpdateConnectionDOM(conn);
+                    // Move every visible editing point with the updated trace in this frame.
+                    updateSegmentHandlesLive(conn, updatedRoute);
                 }
             }
             else if (isDraggingLabel) {
@@ -1957,6 +1978,8 @@
                 commitState();
             }
             
+            let wasDraggingSegment = isDraggingSegment !== null;
+            
             if (isConnecting) {
                 const clientX = e.clientX ?? (e.changedTouches ? e.changedTouches[0].clientX : 0);
                 const clientY = e.clientY ?? (e.changedTouches ? e.changedTouches[0].clientY : 0);
@@ -1995,6 +2018,10 @@
             
             isDraggingShape = false; isPanning = false; isResizing = false;
             isDraggingSegment = null; isDraggingLabel = null;
+            
+            if (wasDraggingSegment) {
+                renderConnections(); // 結束拖曳後，乾淨地重新渲染控制手柄並對齊
+            }
         }
 
         function updateTempLine(endPos) {
