@@ -48,21 +48,21 @@
             transform: translate(-50%, -50%); 
             cursor: crosshair;
             display: none;
-            z-index: 30;
+            z-index: 40;
         }
         .port:hover { background: #3b82f6; transform: translate(-50%, -50%) scale(1.2); }
-        .port.active-port { background: #22c55e; border-color: #16a34a; transform: translate(-50%, -50%) scale(1.2); display: block; z-index: 40;}
+        .port.active-port { background: #22c55e; border-color: #16a34a; transform: translate(-50%, -50%) scale(1.2); display: block; z-index: 50;}
 
         .resize-handle {
             position: absolute;
-            right: -6px; bottom: -6px;
+            right: 4px; bottom: 4px;
             width: 12px; height: 12px;
             background: #fff;
             border: 2px solid #3b82f6;
             border-radius: 2px;
             cursor: nwse-resize;
             display: none;
-            z-index: 30;
+            z-index: 50;
         }
 
         .segment-handle {
@@ -76,11 +76,13 @@
         
         .text-editor {
             position: absolute; inset: 0; 
-            display: flex; align-items: center; justify-content: center;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
             text-align: center; outline: none;
             padding: 8px; font-size: 18px; color: #1e293b;
             word-break: break-word;
+            white-space: pre-wrap; /* Forces proper wrapping and newlines */
             pointer-events: none; user-select: none;
+            overflow: hidden;
         }
 
         .shape-node.editing .text-editor { pointer-events: auto; user-select: text; cursor: text; }
@@ -93,13 +95,16 @@
             font-size: 18px; color: #1e293b;
             border: 1px solid transparent;
             pointer-events: auto; cursor: move; user-select: none;
-            white-space: nowrap; z-index: 15;
+            word-break: break-word;
+            white-space: pre-wrap; /* Supports newlines inside labels */
+            text-align: center;
+            z-index: 15;
             min-height: 20px;
         }
         .conn-label.selected { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
         .conn-label.empty { opacity: 0; pointer-events: none; }
         .conn-label.empty.selected { opacity: 1; pointer-events: auto; border: 1px dashed #94a3b8; color: #94a3b8; background: #fff; cursor: pointer;}
-        .conn-label.editing { pointer-events: auto; user-select: text; cursor: text; border-color: #3b82f6; opacity: 1; color: #1e293b;}
+        .conn-label.editing { pointer-events: auto; user-select: text; cursor: text; border-color: #3b82f6; opacity: 1; color: #1e293b; min-width: 50px;}
 
         #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
         .connection-line { fill: none; pointer-events: auto; cursor: pointer; transition: filter 0.2s; }
@@ -134,10 +139,16 @@
         
         <!-- Scrollable actions area for smaller screens -->
         <div class="flex items-center space-x-2 text-sm overflow-x-auto no-scrollbar w-full justify-start md:justify-end py-1 ml-2">
-            <button onclick="toggleMobileSidebar()" class="md:hidden shrink-0 px-3 py-1.5 bg-slate-800 text-white rounded font-medium shadow-sm">Shapes</button>
+            <button onclick="toggleMobileSidebar()" class="md:hidden shrink-0 px-3 py-1.5 bg-slate-800 text-white rounded font-medium shadow-sm" data-i18n="btn_shapes">Shapes</button>
+
+            <!-- Language Toggle -->
+            <button onclick="toggleLang()" class="shrink-0 px-3 py-1.5 bg-slate-800 text-white rounded font-medium shadow-sm flex items-center space-x-1 hover:bg-slate-700 transition" title="Language">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 15h4.498"></path></svg>
+                <span>En/中</span>
+            </button>
 
             <!-- New Button -->
-            <button onclick="openClearModal()" class="shrink-0 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded transition font-medium border border-red-200">New</button>
+            <button onclick="openClearModal()" class="shrink-0 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded transition font-medium border border-red-200" data-i18n="btn_new">New</button>
             
             <!-- Undo/Redo Buttons -->
             <button onclick="undo()" class="shrink-0 px-2 py-1.5 hover:bg-slate-100 rounded text-slate-600 transition" title="Undo (Ctrl+Z)">
@@ -156,30 +167,31 @@
 
             <!-- Snap Toggle -->
             <select id="snap-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500 hidden md:block" onchange="changeSnap(this.value)">
-                <option value="5">Snap: 5px</option>
-                <option value="10" selected>Snap: 10px</option>
-                <option value="20">Snap: 20px</option>
-                <option value="40">Snap: 40px</option>
+                <option value="5" data-i18n="opt_snap_5">Snap: 5px</option>
+                <option value="10" selected data-i18n="opt_snap_10">Snap: 10px</option>
+                <option value="20" data-i18n="opt_snap_20">Snap: 20px</option>
+                <option value="40" data-i18n="opt_snap_40">Snap: 40px</option>
             </select>
 
+            <!-- Background Toggle -->
             <select id="bg-select" class="shrink-0 border border-slate-300 rounded px-2 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-500 hidden md:block" onchange="changeBackground(this.value)">
-                <option value="dot">Dot Grid</option>
-                <option value="grid">Line Grid</option>
-                <option value="blank">Blank</option>
+                <option value="dot" data-i18n="opt_bg_dot">Dot Grid</option>
+                <option value="grid" data-i18n="opt_bg_grid">Line Grid</option>
+                <option value="blank" data-i18n="opt_bg_blank">Blank</option>
             </select>
 
-            <button onclick="saveData()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition">Save</button>
-            <button onclick="document.getElementById('load-input').click()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition">Load</button>
+            <button onclick="saveData()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition" data-i18n="btn_save">Save</button>
+            <button onclick="document.getElementById('load-input').click()" class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 transition" data-i18n="btn_load">Load</button>
             <input type="file" id="load-input" accept=".json" class="hidden" onchange="loadData(event)">
             
             <button onclick="copyPNG()" class="shrink-0 px-2 sm:px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded shadow-sm transition flex items-center space-x-1" title="Copy to Clipboard">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                <span class="hidden sm:inline">Copy PNG</span>
+                <span class="hidden sm:inline" data-i18n="btn_copy">Copy PNG</span>
             </button>
 
             <button onclick="exportPNG()" class="shrink-0 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded shadow-sm transition flex items-center space-x-1" title="Download PNG">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                <span class="hidden sm:inline">Export PNG</span>
+                <span class="hidden sm:inline" data-i18n="btn_export">Export PNG</span>
             </button>
             
             <!-- Delete Selected -->
@@ -192,12 +204,12 @@
     <!-- Contextual Formatting Toolbar -->
     <div id="format-toolbar" class="bg-slate-50 border border-slate-200 md:border-t-0 md:border-b h-12 md:h-10 items-center justify-center md:justify-start px-2 sm:px-4 space-x-2 text-sm overflow-x-auto no-scrollbar hidden z-40 shrink-0 shadow-lg md:shadow-sm w-full fixed bottom-[50px] md:relative md:bottom-auto left-0 right-0">
         
-        <span class="text-xs text-slate-500 font-medium hidden md:block">Style:</span>
+        <span class="text-xs text-slate-500 font-medium hidden md:block" data-i18n="style_label">Style:</span>
         <div class="flex items-center space-x-1 border-r border-slate-300 pr-2 mr-1">
             <select id="sel-color-target" class="border border-slate-300 rounded px-1 py-1 text-xs focus:outline-none bg-white mr-1 shadow-sm">
-                <option value="stroke" id="opt-stroke">Border / Arrow</option>
-                <option value="fill" id="opt-fill">Fill</option>
-                <option value="textColor" id="opt-text">Text Color</option>
+                <option value="stroke" id="opt-stroke" data-i18n="opt_border_shape">Border / Arrow</option>
+                <option value="fill" id="opt-fill" data-i18n="opt_fill">Fill</option>
+                <option value="textColor" id="opt-text" data-i18n="opt_text_shape">Text Color</option>
             </select>
             <button class="w-5 h-5 rounded-full bg-white border border-slate-300 shadow-sm" onclick="applyColor('#ffffff')" title="White"></button>
             <button class="w-5 h-5 rounded-full bg-slate-800 shadow-sm" onclick="applyColor('#1e293b')" title="Slate"></button>
@@ -216,16 +228,16 @@
 
             <input type="number" id="inp-stroke-width" onchange="applyFormat('strokeWidth', this.value)" class="border border-slate-300 rounded px-1 py-1 w-10 md:w-12 text-xs focus:outline-none" placeholder="2" min="1" max="10" title="Stroke Width">
             <select id="sel-stroke-style" onchange="applyFormat('strokeStyle', this.value)" class="border border-slate-300 rounded px-1 py-1 text-xs focus:outline-none" title="Line Style">
-                <option value="solid">Solid</option>
-                <option value="dashed">Dashed</option>
-                <option value="dotted">Dotted</option>
+                <option value="solid" data-i18n="opt_solid">Solid</option>
+                <option value="dashed" data-i18n="opt_dashed">Dashed</option>
+                <option value="dotted" data-i18n="opt_dotted">Dotted</option>
             </select>
         </div>
 
         <select id="sel-font" onchange="applyFormat('fontFamily', this.value)" class="border border-slate-300 rounded px-2 py-1 bg-white focus:outline-none focus:border-blue-500 text-xs md:text-sm">
-            <option value="ui-sans-serif, system-ui, sans-serif">Sans-Serif</option>
-            <option value="ui-serif, Georgia, serif">Serif</option>
-            <option value="ui-monospace, monospace">Monospace</option>
+            <option value="ui-sans-serif, system-ui, sans-serif" data-i18n="font_sans">Sans-Serif</option>
+            <option value="ui-serif, Georgia, serif" data-i18n="font_serif">Serif</option>
+            <option value="ui-monospace, monospace" data-i18n="font_mono">Monospace</option>
             <option value="'Consolas', monospace">Consolas</option>
             <option value="Arial, sans-serif">Arial</option>
             <option value="'Courier New', Courier, monospace">Courier New</option>
@@ -253,20 +265,20 @@
         <!-- Sidebar Palette -->
         <aside id="sidebar" class="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-sm z-30">
             <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h2 class="font-semibold text-slate-700">Shapes</h2>
+                <h2 class="font-semibold text-slate-700" data-i18n="title_shapes">Shapes</h2>
                 <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-500 hover:text-slate-800 text-2xl leading-none px-2">&times;</button>
             </div>
             <div class="p-4 flex-1 overflow-y-auto space-y-4" id="palette">
                 <!-- Palette Items Injected by JS -->
             </div>
             <div class="p-4 text-xs text-slate-500 border-t border-slate-100 leading-relaxed">
-                <span class="md:hidden text-blue-500 font-medium block mb-2"><b>Tap</b> any shape to add to canvas.</span>
-                <span class="hidden md:inline"><b>Drag & Drop</b> to add shape<br></span>
-                <b>Dbl Click Text</b> to edit<br>
-                <b>Drag Arrow Segment</b> to adjust path<br>
-                <b>Dbl Click Arrow</b> to reset path<br>
-                <b>Drag Label</b> to move it<br>
-                <b>Ctrl + Drag Edge</b> to lock ratio<br>
+                <span class="md:hidden text-blue-500 font-medium block mb-2" data-i18n="hint_1"><b>Tap</b> any shape to add to canvas.</span>
+                <span class="hidden md:inline" data-i18n="hint_2"><b>Drag & Drop</b> to add shape<br></span>
+                <span data-i18n="hint_3"><b>Dbl Click Text</b> to edit<br></span>
+                <span data-i18n="hint_4"><b>Drag Arrow Segment</b> to adjust path<br></span>
+                <span data-i18n="hint_5"><b>Dbl Click Arrow</b> to reset path<br></span>
+                <span data-i18n="hint_6"><b>Drag Label</b> to move it<br></span>
+                <span data-i18n="hint_7"><b>Ctrl + Drag Edge</b> to lock ratio<br></span>
             </div>
         </aside>
 
@@ -308,21 +320,21 @@
     <div id="mobile-action-sheet" class="hidden fixed inset-0 bg-slate-900/60 z-[100] flex-col justify-end backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-t-2xl p-5 pb-8 space-y-5 max-h-[85vh] overflow-y-auto w-full shadow-[0_-10px_40px_rgba(0,0,0,0.2)]" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 class="font-bold text-xl text-slate-800">Menu</h3>
+                <h3 class="font-bold text-xl text-slate-800" data-i18n="menu_title">Menu</h3>
                 <button onclick="toggleMobileActionMenu()" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
             </div>
             
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="toggleMobileSidebar(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg><span>Shapes</span></button>
-                <button onclick="openClearModal(); toggleMobileActionMenu()" class="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>New / Clear</span></button>
-                <button onclick="saveData(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg><span>Save (JSON)</span></button>
-                <button onclick="document.getElementById('load-input').click(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span>Load (JSON)</span></button>
-                <button onclick="copyPNG(); toggleMobileActionMenu()" class="p-3 bg-blue-50 text-blue-700 rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg><span>Copy PNG</span></button>
-                <button onclick="exportPNG(); toggleMobileActionMenu()" class="p-3 bg-blue-600 text-white rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg><span>Export PNG</span></button>
+                <button onclick="toggleMobileSidebar(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg><span data-i18n="menu_shapes">Shapes</span></button>
+                <button onclick="openClearModal(); toggleMobileActionMenu()" class="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span data-i18n="menu_new">New / Clear</span></button>
+                <button onclick="saveData(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg><span data-i18n="menu_save">Save (JSON)</span></button>
+                <button onclick="document.getElementById('load-input').click(); toggleMobileActionMenu()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-center font-medium text-slate-700 flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span data-i18n="menu_load">Load (JSON)</span></button>
+                <button onclick="copyPNG(); toggleMobileActionMenu()" class="p-3 bg-blue-50 text-blue-700 rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg><span data-i18n="menu_copy">Copy PNG</span></button>
+                <button onclick="exportPNG(); toggleMobileActionMenu()" class="p-3 bg-blue-600 text-white rounded-xl text-center font-bold flex flex-col items-center justify-center space-y-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg><span data-i18n="menu_export">Export PNG</span></button>
             </div>
 
             <div class="space-y-3 pt-4 border-t border-slate-100">
-                <label class="text-sm font-bold text-slate-700">Zoom</label>
+                <label class="text-sm font-bold text-slate-700" data-i18n="menu_zoom">Zoom</label>
                 <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-1">
                     <button onclick="zoomBtn(-0.1)" class="w-16 h-12 flex items-center justify-center text-2xl font-bold bg-white border border-slate-200 rounded-lg shadow-sm active:bg-slate-100">-</button>
                     <span id="zoom-text-mobile" class="font-bold text-lg text-slate-700">100%</span>
@@ -331,18 +343,18 @@
             </div>
 
             <div class="space-y-3 pt-4 border-t border-slate-100">
-                <label class="text-sm font-bold text-slate-700">Grid & Snap</label>
+                <label class="text-sm font-bold text-slate-700" data-i18n="menu_grid">Grid & Snap</label>
                 <div class="flex space-x-3">
                     <select id="bg-select-mobile" class="flex-1 border border-slate-200 rounded-xl p-3 bg-slate-50 font-medium text-slate-700" onchange="changeBackground(this.value)">
-                        <option value="dot">Dot Grid</option>
-                        <option value="grid">Line Grid</option>
-                        <option value="blank">Blank</option>
+                        <option value="dot" data-i18n="opt_bg_dot">Dot Grid</option>
+                        <option value="grid" data-i18n="opt_bg_grid">Line Grid</option>
+                        <option value="blank" data-i18n="opt_bg_blank">Blank</option>
                     </select>
                     <select id="snap-select-mobile" class="flex-1 border border-slate-200 rounded-xl p-3 bg-slate-50 font-medium text-slate-700" onchange="changeSnap(this.value)">
-                        <option value="5">Snap: 5px</option>
-                        <option value="10" selected>Snap: 10px</option>
-                        <option value="20">Snap: 20px</option>
-                        <option value="40">Snap: 40px</option>
+                        <option value="5" data-i18n="opt_snap_5">Snap: 5px</option>
+                        <option value="10" selected data-i18n="opt_snap_10">Snap: 10px</option>
+                        <option value="20" data-i18n="opt_snap_20">Snap: 20px</option>
+                        <option value="40" data-i18n="opt_snap_40">Snap: 40px</option>
                     </select>
                 </div>
             </div>
@@ -352,11 +364,11 @@
     <!-- Clear Canvas Confirmation Modal -->
     <div id="clear-modal" class="hidden fixed inset-0 bg-slate-900/60 z-[110] flex items-center justify-center backdrop-blur-sm transition-opacity">
         <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-slate-200">
-            <h3 class="text-xl font-bold text-slate-800 mb-2">Clear Canvas?</h3>
-            <p class="text-slate-600 mb-6 font-medium">Are you sure you want to clear the entire flowchart? This action cannot be undone.</p>
+            <h3 class="text-xl font-bold text-slate-800 mb-2" data-i18n="modal_title">Clear Canvas?</h3>
+            <p class="text-slate-600 mb-6 font-medium" data-i18n="modal_desc">Are you sure you want to clear the entire flowchart? This action cannot be undone.</p>
             <div class="flex justify-end space-x-3">
-                <button onclick="closeClearModal()" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold transition">Cancel</button>
-                <button onclick="confirmClearCanvas()" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition shadow-md">Clear Canvas</button>
+                <button onclick="closeClearModal()" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold transition" data-i18n="btn_cancel">Cancel</button>
+                <button onclick="confirmClearCanvas()" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition shadow-md" data-i18n="btn_clear">Clear Canvas</button>
             </div>
         </div>
     </div>
@@ -366,6 +378,66 @@
         document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
         document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
         document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+        /* --- I18N DICTIONARY & LANGUAGE TOGGLE --- */
+        const i18n = {
+            en: {
+                btn_shapes: "Shapes", btn_new: "New", btn_save: "Save", btn_load: "Load", btn_copy: "Copy PNG", btn_export: "Export PNG",
+                style_label: "Style:", opt_border_shape: "Shape Border", opt_border_arrow: "Arrow Line", opt_fill: "Fill", opt_text_shape: "Shape Text", opt_text_label: "Label Text",
+                opt_solid: "Solid", opt_dashed: "Dashed", opt_dotted: "Dotted",
+                font_sans: "Sans-Serif", font_serif: "Serif", font_mono: "Monospace",
+                opt_snap_5: "Snap: 5px", opt_snap_10: "Snap: 10px", opt_snap_20: "Snap: 20px", opt_snap_40: "Snap: 40px",
+                opt_bg_dot: "Dot Grid", opt_bg_grid: "Line Grid", opt_bg_blank: "Blank",
+                hint_1: "<b>Tap</b> any shape to add to canvas.",
+                hint_2: "<b>Drag & Drop</b> to add shape<br>",
+                hint_3: "<b>Dbl Click Text</b> to edit<br>",
+                hint_4: "<b>Drag Arrow Segment</b> to adjust path<br>",
+                hint_5: "<b>Dbl Click Arrow</b> to reset path<br>",
+                hint_6: "<b>Drag Label</b> to move it<br>",
+                hint_7: "<b>Ctrl + Drag Edge</b> to lock ratio<br>",
+                modal_title: "Clear Canvas?", modal_desc: "Are you sure you want to clear the entire flowchart? This action cannot be undone.",
+                btn_cancel: "Cancel", btn_clear: "Clear Canvas",
+                menu_title: "Menu", menu_shapes: "Shapes", menu_new: "New / Clear", menu_save: "Save (JSON)", menu_load: "Load (JSON)", menu_copy: "Copy PNG", menu_export: "Export PNG", menu_zoom: "Zoom", menu_grid: "Grid & Snap"
+            },
+            zh: {
+                btn_shapes: "形狀", btn_new: "新建", btn_save: "儲存", btn_load: "載入", btn_copy: "複製圖片", btn_export: "匯出圖片",
+                style_label: "樣式:", opt_border_shape: "形狀邊框", opt_border_arrow: "箭頭線條", opt_fill: "填充顏色", opt_text_shape: "形狀文字", opt_text_label: "標籤文字",
+                opt_solid: "實線", opt_dashed: "虛線", opt_dotted: "點線",
+                font_sans: "無襯線體", font_serif: "襯線體", font_mono: "等寬字體",
+                opt_snap_5: "對齊: 5px", opt_snap_10: "對齊: 10px", opt_snap_20: "對齊: 20px", opt_snap_40: "對齊: 40px",
+                opt_bg_dot: "點狀網格", opt_bg_grid: "線條網格", opt_bg_blank: "空白背景",
+                hint_1: "<b>點擊</b> 任意形狀加入畫布。",
+                hint_2: "<b>拖曳</b> 形狀加入畫布<br>",
+                hint_3: "<b>雙擊文字</b> 以編輯內容<br>",
+                hint_4: "<b>拖曳箭頭線段</b> 手動調整路徑<br>",
+                hint_5: "<b>雙擊箭頭</b> 重置為自動路徑<br>",
+                hint_6: "<b>拖曳標籤</b> 在線上移動位置<br>",
+                hint_7: "<b>Ctrl + 拖曳邊緣</b> 鎖定縮放比例<br>",
+                modal_title: "確認清除畫布？", modal_desc: "您確定要清除整個流程圖嗎？此動作無法復原。",
+                btn_cancel: "取消", btn_clear: "清除畫布",
+                menu_title: "選單", menu_shapes: "形狀庫", menu_new: "清除畫布", menu_save: "儲存 (JSON)", menu_load: "載入 (JSON)", menu_copy: "複製圖片", menu_export: "匯出圖片", menu_zoom: "縮放", menu_grid: "網格與對齊"
+            }
+        };
+
+        let currentLang = 'en';
+
+        function toggleLang() {
+            currentLang = currentLang === 'en' ? 'zh' : 'en';
+            applyLang();
+        }
+
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.dataset.i18n;
+                if (i18n[currentLang][key]) {
+                    el.innerHTML = i18n[currentLang][key];
+                }
+            });
+            buildPalette();
+            updateFormatToolbar();
+            state.connections.forEach(conn => createOrUpdateConnectionDOM(conn));
+            state.shapes.forEach(shape => { if (shape.type === 'image' && !shape.imgData) updateShapeNode(shape); });
+        }
 
         /* --- STYLES HELPER --- */
         const getStyleStr = (s) => {
@@ -384,7 +456,7 @@
         /* --- GEOMETRY AND SHAPE DEFINITIONS --- */
         const SHAPE_DEFS = {
             'process': {
-                name: 'Process', defaultText: 'Process', defaultW: 120, defaultH: 60,
+                name: { en: 'Process', zh: '流程 (Process)' }, defaultText: { en: 'Process', zh: '流程' }, defaultW: 120, defaultH: 60,
                 draw: (w, h, s) => {
                     const st = getStyleStr(s);
                     return `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="${st.f}" stroke="${st.str}" stroke-width="${st.sw}" stroke-dasharray="${st.sd}"/>`;
@@ -396,7 +468,7 @@
                 ]
             },
             'decision': {
-                name: 'Decision', defaultText: 'Decision', defaultW: 120, defaultH: 80,
+                name: { en: 'Decision', zh: '判斷 (Decision)' }, defaultText: { en: 'Decision', zh: '判斷' }, defaultW: 120, defaultH: 80,
                 draw: (w, h, s) => {
                     const st = getStyleStr(s);
                     return `<polygon points="${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}" fill="${st.f}" stroke="${st.str}" stroke-width="${st.sw}" stroke-dasharray="${st.sd}"/>`;
@@ -407,7 +479,7 @@
                 ]
             },
             'start-end': {
-                name: 'Start / End', defaultText: 'Start', defaultW: 100, defaultH: 50,
+                name: { en: 'Start / End', zh: '開始/結束' }, defaultText: { en: 'Start', zh: '開始' }, defaultW: 100, defaultH: 50,
                 draw: (w, h, s) => {
                     const st = getStyleStr(s);
                     return `<rect x="0" y="0" width="${w}" height="${h}" rx="${h/2}" fill="${st.f}" stroke="${st.str}" stroke-width="${st.sw}" stroke-dasharray="${st.sd}"/>`;
@@ -417,7 +489,7 @@
                 ]
             },
             'data-io': {
-                name: 'Data (I/O)', defaultText: 'Data', defaultW: 130, defaultH: 60,
+                name: { en: 'Data (I/O)', zh: '資料 (I/O)' }, defaultText: { en: 'Data', zh: '資料' }, defaultW: 130, defaultH: 60,
                 draw: (w, h, s) => {
                     const off = Math.min(20, w/4);
                     const st = getStyleStr(s);
@@ -434,7 +506,7 @@
                 }
             },
             'document': {
-                name: 'Document', defaultText: 'Document', defaultW: 120, defaultH: 70,
+                name: { en: 'Document', zh: '文件 (Document)' }, defaultText: { en: 'Document', zh: '文件' }, defaultW: 120, defaultH: 70,
                 draw: (w, h, s) => {
                     const waveH = Math.min(15, h/3);
                     const st = getStyleStr(s);
@@ -451,17 +523,17 @@
                 }
             },
             'image': {
-                name: 'Image', defaultText: '', defaultW: 150, defaultH: 150,
+                name: { en: 'Image', zh: '圖片 (Image)' }, defaultText: { en: '', zh: '' }, defaultW: 150, defaultH: 150,
                 draw: (w, h, shape) => {
                     const st = getStyleStr(shape);
                     const drawStr = shape && shape.stroke ? st.str : 'transparent';
-                    
+                    const ph = currentLang === 'en' ? 'Drag/Paste/Dbl-Click Image' : '拖曳/貼上/雙擊圖片';
                     if (shape && shape.imgData) {
                         return `<image href="${shape.imgData}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none"/>
                                 <rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${drawStr}" stroke-width="${st.sw}" stroke-dasharray="${st.sd}"/>`;
                     } else {
                         return `<rect x="0" y="0" width="${w}" height="${h}" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="5,5" stroke-width="2"/>
-                                <text x="${w/2}" y="${h/2}" text-anchor="middle" dominant-baseline="central" font-size="12" font-family="sans-serif" fill="#64748b" pointer-events="none">Drag/Paste/Dbl-Click Image</text>`;
+                                <text x="${w/2}" y="${h/2}" text-anchor="middle" dominant-baseline="central" font-size="12" font-family="sans-serif" fill="#64748b" pointer-events="none">${ph}</text>`;
                     }
                 },
                 ports: (w, h) => [
@@ -640,7 +712,7 @@
 
         /* --- INITIALIZATION --- */
         function init() {
-            buildPalette();
+            applyLang();
             
             canvasWrapper.scrollLeft = 2000 - canvasWrapper.clientWidth / 2;
             canvasWrapper.scrollTop = 2000 - canvasWrapper.clientHeight / 2;
@@ -812,6 +884,7 @@
         /* --- PALETTE RENDERING --- */
         function buildPalette() {
             const palette = document.getElementById('palette');
+            palette.innerHTML = '';
             for (const [type, def] of Object.entries(SHAPE_DEFS)) {
                 const scaleIcon = 0.5;
                 const svgW = def.defaultW * scaleIcon;
@@ -826,7 +899,7 @@
                                 ${def.draw(def.defaultW, def.defaultH, null)}
                             </g>
                         </svg>
-                        <span class="text-sm font-medium select-none pointer-events-none">${def.name}</span>
+                        <span class="text-sm font-medium select-none pointer-events-none">${def.name[currentLang]}</span>
                     </div>
                 `;
                 palette.insertAdjacentHTML('beforeend', shapeHtml);
@@ -848,14 +921,14 @@
 
                 if (state.selectedShapes.length > 0) {
                     sObj = state.shapes.find(s => s.id === state.selectedShapes[0]);
-                    optStroke.innerText = 'Shape Border';
+                    optStroke.innerText = i18n[currentLang].opt_border_shape;
                     optFill.style.display = 'block';
-                    optText.innerText = 'Shape Text';
+                    optText.innerText = i18n[currentLang].opt_text_shape;
                 } else if (state.selectedConnections.length > 0) {
                     sObj = state.connections.find(c => c.id === state.selectedConnections[0]);
-                    optStroke.innerText = 'Arrow Line';
+                    optStroke.innerText = i18n[currentLang].opt_border_arrow;
                     optFill.style.display = 'none';
-                    optText.innerText = 'Label Text';
+                    optText.innerText = i18n[currentLang].opt_text_label;
                     if (document.getElementById('sel-color-target').value === 'fill') {
                         document.getElementById('sel-color-target').value = 'stroke';
                     }
@@ -934,7 +1007,8 @@
             if (shape.type !== 'image') {
                 const textDiv = document.createElement('div');
                 textDiv.className = 'text-editor';
-                textDiv.innerHTML = shape.text;
+                // Load raw text but map visual \n to HTML <br> for the display
+                textDiv.innerHTML = shape.text ? shape.text.replace(/\n/g, '<br>') : '';
                 textDiv.spellcheck = false;
                 textDiv.contentEditable = false; 
                 
@@ -966,7 +1040,11 @@
 
                 textDiv.addEventListener('blur', e => {
                     node.classList.remove('editing'); textDiv.contentEditable = false; window.getSelection().removeAllRanges();
-                    shape.text = textDiv.innerHTML || SHAPE_DEFS[shape.type].defaultText; commitState();
+                    // 使用原生 innerText 精準擷取視覺上的換行，避免 HTML 標籤造成的重複換行
+                    let raw = textDiv.innerText.replace(/^\n+|\n+$/g, '');
+                    shape.text = raw || SHAPE_DEFS[shape.type].defaultText[currentLang]; 
+                    updateShapeNode(shape);
+                    commitState();
                 });
 
                 node.appendChild(textDiv);
@@ -1028,9 +1106,15 @@
 
             const resizeHandle = document.createElement('div');
             resizeHandle.className = 'resize-handle';
+            // 添加 pointer-events: none 確保點擊可以正確觸發在父元素上
+            resizeHandle.innerHTML = `<svg style="pointer-events: none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 15 21 21 15 21"></polyline><line x1="21" y1="21" x2="14" y2="14"></line></svg>`;
+            
             const startResizeHandler = (e) => {
                 e.stopPropagation(); if(e.cancelable) e.preventDefault();
-                selectShape(shape.id, false); 
+                // 只有在未選中時才觸發選擇，避免破壞行動裝置觸控事件追蹤
+                if (!state.selectedShapes.includes(shape.id)) {
+                    selectShape(shape.id, false); 
+                }
                 isResizing = true;
                 const pos = getEventCanvasPos(e);
                 resizeStart = { w: shape.w, h: shape.h, startX: pos.x, startY: pos.y };
@@ -1040,7 +1124,7 @@
             node.appendChild(resizeHandle);
 
             const startDrag = (e) => {
-                if (e.target.classList.contains('port') || e.target.classList.contains('resize-handle')) return;
+                if (e.target.closest('.port') || e.target.closest('.resize-handle')) return;
                 if (node.classList.contains('editing')) return;
                 
                 if (activePort && activePort.shapeId !== shape.id) {
@@ -1098,6 +1182,18 @@
                     const txtEl = svg.querySelector('text');
                     if (txtEl) { txtEl.setAttribute('x', shape.w / 2); txtEl.setAttribute('y', shape.h / 2); }
                 }
+
+                // Update text visually
+                const textDiv = node.querySelector('.text-editor');
+                if (textDiv && !node.classList.contains('editing')) {
+                    textDiv.style.fontSize = `${shape.fontSize || 18}px`;
+                    textDiv.style.fontFamily = shape.fontFamily || 'ui-sans-serif, system-ui, sans-serif';
+                    textDiv.style.fontWeight = shape.fontWeight || 'normal';
+                    textDiv.style.fontStyle = shape.fontStyle || 'normal';
+                    textDiv.style.textDecoration = shape.textDecoration || 'none';
+                    textDiv.style.color = shape.textColor || '#1e293b'; 
+                    textDiv.innerHTML = shape.text ? shape.text.replace(/\n/g, '<br>') : '';
+                }
                 
                 const portDefs = def.ports(shape.w, shape.h);
                 const ports = node.querySelectorAll('.port');
@@ -1117,7 +1213,7 @@
         }
 
         function renderConnections() {
-            // Only clean up labels and segment handles here, full redraw cleans connectionsGroup
+            // 清理標籤與控制手柄，完整重繪會清理 connectionsGroup
             document.querySelectorAll('.conn-label, .segment-handle').forEach(el => el.remove());
             connectionsGroup.innerHTML = '';
             
@@ -1141,7 +1237,7 @@
                 );
             }
 
-            // Create invisible thick hitbox for much easier clicking
+            // 建立隱形的寬觸控區域以方便點擊與拖曳
             let hitboxEl = document.getElementById(`conn-hitbox-${conn.id}`);
             if (!hitboxEl) {
                 hitboxEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1149,7 +1245,7 @@
                 hitboxEl.onclick = (e) => selectConnection(conn.id, e);
                 hitboxEl.ondblclick = (e) => resetConnectionRouting(conn.id, e);
                 hitboxEl.setAttribute('stroke', 'transparent');
-                hitboxEl.setAttribute('stroke-width', '25'); // Massive 25px grab area
+                hitboxEl.setAttribute('stroke-width', '25'); // 25px 的大觸控範圍
                 hitboxEl.setAttribute('fill', 'none');
                 hitboxEl.style.cursor = 'pointer';
                 hitboxEl.style.pointerEvents = 'stroke';
@@ -1228,15 +1324,22 @@
 
                 label.addEventListener('blur', e => {
                     label.classList.remove('editing'); label.contentEditable = false; window.getSelection().removeAllRanges();
-                    conn.text = label.innerText.replace(/Add Label\.\.\./g, '').trim(); commitState(); 
+                    let raw = label.innerText.replace(/^\n+|\n+$/g, '');
+                    conn.text = raw.replace(/^(Add Label\.\.\.|新增標籤\.\.\.)$/g, '').trim(); 
+                    commitState(); 
                     createOrUpdateConnectionDOM(conn); 
                 });
             }
 
             label.className = `conn-label ${isSel ? 'selected' : ''} ${!conn.text && !isSel ? 'empty' : ''} ${isPlaceholder ? 'is-placeholder' : ''}`;
             label.style.left = `${labPos.x}px`; label.style.top = `${labPos.y}px`;
+            
             if (!label.classList.contains('editing')) {
-                label.innerText = isPlaceholder ? 'Add Label...' : (conn.text || '');
+                if (isPlaceholder) {
+                    label.innerText = currentLang === 'en' ? 'Add Label...' : '新增標籤...';
+                } else {
+                    label.innerHTML = conn.text ? conn.text.replace(/\n/g, '<br>') : '';
+                }
             }
 
             label.style.fontSize = `${conn.fontSize || 18}px`;
@@ -1246,7 +1349,7 @@
             label.style.textDecoration = conn.textDecoration || 'none';
             label.style.color = textColor;
 
-            // Target cleanup and re-render of segment handles
+            // 清理與重新渲染線段手柄
             document.querySelectorAll(`.segment-handle[data-conn-id="${conn.id}"]`).forEach(el => el.remove());
             
             if (isSel && route.points && route.points.length > 1) {
@@ -1280,7 +1383,7 @@
             }
         }
 
-        /* --- ROUTING & MATH LOGIC --- */
+        /* --- 路由與數學運算邏輯 --- */
         function getClosestPort(shapeId, targetX, targetY) {
             const shape = state.shapes.find(s => s.id === shapeId);
             const def = SHAPE_DEFS[shape.type];
@@ -1300,6 +1403,32 @@
             const portDefs = SHAPE_DEFS[shape.type].ports(shape.w, shape.h);
             const portDef = portDefs[portIndex];
             return { x: shape.x + shape.w * portDef.x, y: shape.y + shape.h * portDef.y, dx: portDef.dx, dy: portDef.dy };
+        }
+
+        function resolvePortDirection(p, targetPos) {
+            // 如果連線點已經是垂直或水平 (上/下/左/右)，則保持原樣
+            if (p.dx === 0 || p.dy === 0) return { x: p.x, y: p.y, dx: p.dx, dy: p.dy };
+
+            // 針對角落的連線點，動態計算朝向目標的最佳直線軸
+            let distX = targetPos.x - p.x;
+            let distY = targetPos.y - p.y;
+
+            let matchX = (distX > 0 && p.dx > 0) || (distX < 0 && p.dx < 0);
+            let matchY = (distY > 0 && p.dy > 0) || (distY < 0 && p.dy < 0);
+
+            let newDx = 0, newDy = 0;
+
+            if (matchX && !matchY) { newDx = p.dx; newDy = 0; }
+            else if (matchY && !matchX) { newDx = 0; newDy = p.dy; }
+            else {
+                // 若雙向符合或雙向不符，則沿著距離較長的軸向延伸
+                if (Math.abs(distX) > Math.abs(distY)) {
+                    newDx = p.dx; newDy = 0;
+                } else {
+                    newDx = 0; newDy = p.dy;
+                }
+            }
+            return { x: p.x, y: p.y, dx: newDx, dy: newDy };
         }
 
         function getPointOnPath(pts, ratio) {
@@ -1358,24 +1487,81 @@
         }
 
         function getManualPath(conn) {
-            const p1 = getPortAbsolutePos(conn.fromId, conn.fromPort);
-            const p2 = getPortAbsolutePos(conn.toId, conn.toPort);
-            if (!p1 || !p2) return {path: '', midX:0, midY:0, points:[]};
+            const rawP1 = getPortAbsolutePos(conn.fromId, conn.fromPort);
+            const rawP2 = getPortAbsolutePos(conn.toId, conn.toPort);
+            if (!rawP1 || !rawP2) return {path: '', midX:0, midY:0, points:[]};
             
+            const p1 = resolvePortDirection(rawP1, rawP2);
+            const p2 = resolvePortDirection(rawP2, rawP1);
+            
+            // Generate full orthogonal path through waypoints
             let pts = [{x: p1.x, y: p1.y}];
-            if (conn.waypoints) pts.push(...conn.waypoints);
+            
+            const STANDOFF = 25;
+            let current = {x: p1.x + p1.dx * STANDOFF, y: p1.y + p1.dy * STANDOFF};
+            pts.push(current);
+
+            if (conn.waypoints && conn.waypoints.length > 0) {
+                for (let i = 0; i < conn.waypoints.length; i++) {
+                    const target = conn.waypoints[i];
+                    // Automatically inject an orthogonal corner if the next waypoint is diagonal
+                    if (current.x !== target.x && current.y !== target.y) {
+                        if (i === 0) {
+                            if (p1.dx !== 0) pts.push({x: target.x, y: current.y});
+                            else pts.push({x: current.x, y: target.y});
+                        } else {
+                            const prev = pts[pts.length - 1];
+                            const prev2 = pts.length > 1 ? pts[pts.length - 2] : null;
+                            if (prev2) {
+                                if (prev.x === prev2.x) pts.push({x: target.x, y: prev.y}); // came vertically, go horizontally
+                                else pts.push({x: prev.x, y: target.y}); // came horizontally, go vertically
+                            } else {
+                                pts.push({x: target.x, y: current.y});
+                            }
+                        }
+                    }
+                    pts.push(target);
+                    current = target;
+                }
+            }
+
+            const endStandoff = {x: p2.x + p2.dx * STANDOFF, y: p2.y + p2.dy * STANDOFF};
+            
+            // Connect last point to the end port stand-off orthogonally
+            if (current.x !== endStandoff.x && current.y !== endStandoff.y) {
+                if (p2.dx !== 0) pts.push({x: current.x, y: endStandoff.y});
+                else pts.push({x: endStandoff.x, y: current.y});
+            }
+            
+            pts.push(endStandoff);
             pts.push({x: p2.x, y: p2.y});
             
-            let d = `M ${pts[0].x} ${pts[0].y} `;
-            for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
-            const mid = getMidPoint(pts);
-            return { path: d, midX: mid.x, midY: mid.y, points: pts };
+            // Clean up straight lines (remove useless intermediate points on the same axis)
+            let cleanPts = [pts[0]];
+            for (let i = 1; i < pts.length - 1; i++) {
+                const prev = cleanPts[cleanPts.length - 1];
+                const cur = pts[i];
+                const next = pts[i + 1];
+                if ((prev.x === cur.x && cur.x === next.x) || (prev.y === cur.y && cur.y === next.y)) continue;
+                if (prev.x === cur.x && prev.y === cur.y) continue;
+                cleanPts.push(cur);
+            }
+            cleanPts.push(pts[pts.length - 1]);
+
+            let d = `M ${cleanPts[0].x} ${cleanPts[0].y} `;
+            for(let i=1; i<cleanPts.length; i++) d += `L ${cleanPts[i].x} ${cleanPts[i].y} `;
+            const mid = getMidPoint(cleanPts);
+            return { path: d, midX: mid.x, midY: mid.y, points: cleanPts };
         }
 
         function getOrthogonalPath(conn) {
-            const p1 = getPortAbsolutePos(conn.fromId, conn.fromPort);
-            const p2 = getPortAbsolutePos(conn.toId, conn.toPort);
-            if (!p1 || !p2) return {path: '', midX:0, midY:0, points:[]};
+            const rawP1 = getPortAbsolutePos(conn.fromId, conn.fromPort);
+            const rawP2 = getPortAbsolutePos(conn.toId, conn.toPort);
+            if (!rawP1 || !rawP2) return {path: '', midX:0, midY:0, points:[]};
+            
+            const p1 = resolvePortDirection(rawP1, rawP2);
+            const p2 = resolvePortDirection(rawP2, rawP1);
+            
             return routeOrthogonal(p1, p2, conn.fromId, conn.toId);
         }
 
@@ -1444,14 +1630,21 @@
 
             if (!found) return calculateSimpleRoute(p1, p2);
 
-            let pts = [{x: p1.x, y: p1.y}, start];
+            let pts = [{x: p1.x, y: p1.y}];
+            // Force pure orthogonal step away from corner ports so it never diagonally skips
+            if (p1.dx !== 0 && p1.dy !== 0) pts.push({x: p1.x, y: start.y});
+            pts.push(start);
+            
             for (let i = 1; i < found.length - 1; i++) {
                 const prev = found[i-1], cur = found[i], nxt = found[i+1];
                 if (prev.x !== nxt.x && prev.y !== nxt.y) pts.push({x: xArr[cur.x], y: yArr[cur.y]});
             }
             if (found.length > 1) pts.push({x: xArr[found[found.length - 1].x], y: yArr[found[found.length - 1].y]});
             else pts.push({x: xArr[ex], y: yArr[ey]});
-            pts.push(end, {x: p2.x, y: p2.y});
+            
+            // Force pure orthogonal step into end corner port
+            if (p2.dx !== 0 && p2.dy !== 0) pts.push({x: p2.x, y: end.y});
+            pts.push({x: p2.x, y: p2.y});
             
             let d = `M ${pts[0].x} ${pts[0].y} `;
             for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
@@ -1460,29 +1653,38 @@
         }
 
         function calculateSimpleRoute(p1, p2) {
-            const margin = 20;
+            const margin = 25;
             const start = { x: p1.x + p1.dx * margin, y: p1.y + p1.dy * margin };
             const end = { x: p2.x + p2.dx * margin, y: p2.y + p2.dy * margin };
-            let pts = [{x: p1.x, y: p1.y}, start];
-            let midX = (start.x + end.x) / 2; let midY = (start.y + end.y) / 2;
             
-            if (p1.dx !== 0 && p2.dx !== 0) {
-                if (Math.sign(p1.dx) !== Math.sign(p2.dx)) { pts.push({x: midX, y: start.y}, {x: midX, y: end.y});
-                } else { let farX = p1.dx > 0 ? Math.max(start.x, end.x) + 20 : Math.min(start.x, end.x) - 20; pts.push({x: farX, y: start.y}, {x: farX, y: end.y}); }
-            } else if (p1.dy !== 0 && p2.dy !== 0) {
-                if (Math.sign(p1.dy) !== Math.sign(p2.dy)) { pts.push({x: start.x, y: midY}, {x: end.x, y: midY});
-                } else { let farY = p1.dy > 0 ? Math.max(start.y, end.y) + 20 : Math.min(start.y, end.y) - 20; pts.push({x: start.x, y: farY}, {x: end.x, y: farY}); }
+            let pts = [{x: p1.x, y: p1.y}];
+            if (p1.dx !== 0 && p1.dy !== 0) pts.push({x: p1.x, y: start.y});
+            pts.push(start);
+            
+            let p1Axis = p1.dx !== 0 ? 'x' : 'y';
+            if (p1.dx !== 0 && p1.dy !== 0) p1Axis = 'x'; // Left start horizontally
+            
+            let mid1, mid2;
+            if (p1Axis === 'x') {
+                mid1 = { x: start.x, y: (start.y + end.y)/2 };
+                mid2 = { x: end.x, y: (start.y + end.y)/2 };
             } else {
-                if (p1.dx !== 0) pts.push({x: end.x, y: start.y}); else pts.push({x: start.x, y: end.y});
+                mid1 = { x: (start.x + end.x)/2, y: start.y };
+                mid2 = { x: (start.x + end.x)/2, y: end.y };
             }
-            pts.push(end, {x: p2.x, y: p2.y});
+            pts.push(mid1, mid2);
+            
+            pts.push(end);
+            if (p2.dx !== 0 && p2.dy !== 0) pts.push({x: p2.x, y: end.y});
+            pts.push({x: p2.x, y: p2.y});
+            
             let d = `M ${pts[0].x} ${pts[0].y} `;
             for(let i=1; i<pts.length; i++) d += `L ${pts[i].x} ${pts[i].y} `;
             const mid = getMidPoint(pts); 
             return { path: d, midX: mid.x, midY: mid.y, points: pts };
         }
 
-        /* --- EVENT HANDLERS --- */
+        /* --- 事件處理程序 --- */
         function handleDragStartPalette(e, type) { e.dataTransfer.setData('text/plain', type); }
         
         function handleDrop(e) {
@@ -1513,7 +1715,7 @@
             const type = e.dataTransfer.getData('text/plain');
             if (SHAPE_DEFS[type]) {
                 const def = SHAPE_DEFS[type];
-                addShape(type, pos.x - def.defaultW/2, pos.y - def.defaultH/2);
+                addShape(type, pos.x - def.defaultW/2, pos.y - def.defaultH/2, def.defaultText[currentLang]);
             }
         }
 
@@ -1607,7 +1809,7 @@
             const cy = canvasWrapper.scrollTop + canvasWrapper.clientHeight / 2;
             const targetX = cx / scale; const targetY = cy / scale;
             const def = SHAPE_DEFS[type];
-            addShape(type, targetX - def.defaultW/2, targetY - def.defaultH/2, def.defaultText);
+            addShape(type, targetX - def.defaultW/2, targetY - def.defaultH/2, def.defaultText[currentLang]);
             document.getElementById('sidebar').classList.remove('mobile-open');
         }
 
@@ -1685,7 +1887,7 @@
                     let targetW = resizeStart.w + dx;
                     let targetH = resizeStart.h + dy;
 
-                    // If holding Ctrl/Cmd, lock the aspect ratio
+                    // 若按住 Ctrl/Cmd 鍵，鎖定長寬比例
                     if (e.ctrlKey || e.metaKey) {
                         const scaleW = targetW / resizeStart.w;
                         const scaleH = targetH / resizeStart.h;
@@ -1721,7 +1923,7 @@
                     }
                 });
 
-                // Dynamically update only attached connections without a full DOM wipe
+                // 只動態更新連接著移動形狀的線，避免破壞效能
                 state.connections.forEach(conn => {
                     if (state.selectedShapes.includes(conn.fromId) || state.selectedShapes.includes(conn.toId)) {
                         conn.routing = 'auto';
@@ -1796,15 +1998,17 @@
         }
 
         function updateTempLine(endPos) {
-            const p1 = getPortAbsolutePos(activePort.shapeId, activePort.portIndex);
-            const p2 = { x: endPos.x, y: endPos.y, dx: 0, dy: -1 }; 
+            const rawP1 = getPortAbsolutePos(activePort.shapeId, activePort.portIndex);
+            const rawP2 = { x: endPos.x, y: endPos.y, dx: 0, dy: -1 }; 
+            const p1 = resolvePortDirection(rawP1, rawP2);
+            const p2 = resolvePortDirection(rawP2, rawP1);
             tempLine.setAttribute('d', calculateSimpleRoute(p1, p2).path);
         }
 
-        /* --- ACTIONS --- */
+        /* --- 主要操作函數 --- */
         function addShape(type, x, y, text) {
             const def = SHAPE_DEFS[type];
-            const newShape = { id: state.nextShapeId++, type: type, x: snap(x), y: snap(y), w: snap(def.defaultW), h: snap(def.defaultH), text: text || def.defaultText };
+            const newShape = { id: state.nextShapeId++, type: type, x: snap(x), y: snap(y), w: snap(def.defaultW), h: snap(def.defaultH), text: text !== undefined ? text : def.defaultText[currentLang] };
             state.shapes.push(newShape); selectShape(newShape.id); renderAll(); commitState();
         }
 
@@ -1905,7 +2109,7 @@
             menu.classList.toggle('flex');
         }
 
-        /* --- EXPORT --- */
+        /* --- 匯出與儲存 --- */
         function saveData() {
             const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state)); a.download = "flowchart.json";
             document.body.appendChild(a); a.click(); a.remove();
@@ -1928,7 +2132,7 @@
                     updateFormatToolbar();
                     renderAll(); commitState(); 
                 } 
-                catch (err) { alert('Invalid JSON file'); }
+                catch (err) { alert(currentLang === 'en' ? 'Invalid JSON file' : '無效的 JSON 檔案'); }
             };
             reader.readAsText(file);
             event.target.value = '';
@@ -1973,7 +2177,7 @@
 
             const pad = 80; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
-            // HELPER: Convert HTML text (with line breaks) to properly spaced SVG tspan lines
+            // 輔助函數：將含有換行標籤的 HTML 文字轉換成 SVG 的 <tspan> 以支援多行渲染
             const buildSvgText = (htmlText, x, y, fontSize, color, fw, fs, td, ff, isLabel) => {
                 if (!htmlText) return '';
                 
@@ -1992,7 +2196,7 @@
                 let tspans = '';
                 lines.forEach((line, i) => {
                     const dy = i === 0 ? 0 : lineHeight;
-                    // Provide a zero-width space for empty lines so they don't collapse
+                    // 若行為空提供隱形字元以防止高度坍塌
                     const escapedLine = line ? line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '&#8203;';
                     tspans += `<tspan x="${x}" dy="${dy}">${escapedLine}</tspan>`;
                 });
@@ -2069,7 +2273,7 @@
 
         function copyPNG() {
             if (!navigator.clipboard || !window.ClipboardItem) {
-                alert('Clipboard API not supported. Please use Export PNG instead.');
+                alert(currentLang === 'en' ? 'Clipboard API not supported. Please use Export PNG instead.' : '您的瀏覽器不支援剪貼簿 API，請改用「匯出圖片」功能。');
                 return;
             }
             try {
@@ -2078,14 +2282,14 @@
                 });
                 const item = new ClipboardItem({ 'image/png': blobPromise });
                 navigator.clipboard.write([item])
-                    .then(() => alert('Copied to clipboard!'))
+                    .then(() => alert(currentLang === 'en' ? 'Copied to clipboard!' : '已成功複製到剪貼簿！'))
                     .catch(err => {
                         console.error(err);
-                        alert('Clipboard write blocked by browser. Please use Export PNG instead.');
+                        alert(currentLang === 'en' ? 'Clipboard write blocked by browser. Please use Export PNG instead.' : '瀏覽器阻擋了寫入剪貼簿，請改用「匯出圖片」功能。');
                     });
             } catch (e) { 
                 console.error(e);
-                alert('Clipboard copy failed. Please use Export PNG instead.'); 
+                alert(currentLang === 'en' ? 'Clipboard copy failed. Please use Export PNG instead.' : '複製失敗，請改用「匯出圖片」功能。'); 
             }
         }
 
